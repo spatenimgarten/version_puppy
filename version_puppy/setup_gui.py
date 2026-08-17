@@ -4,9 +4,12 @@ from tkinter import filedialog, messagebox
 
 from .batch_template import render_batch
 from .naming import NamingError, split_project_dir
+from .settings import load_setup_defaults, save_setup_defaults
 
 
 def run_setup_gui():
+    defaults = load_setup_defaults()
+
     root = tk.Tk()
     root.title("version_puppy – Neues Projekt einrichten")
     root.resizable(False, False)
@@ -15,9 +18,9 @@ def run_setup_gui():
         row=0, column=0, columnspan=3, padx=16, pady=(16, 8), sticky="w"
     )
 
-    def add_row(row, label_text, browse=False):
+    def add_row(row, label_text, browse=False, default=""):
         tk.Label(root, text=label_text).grid(row=row, column=0, padx=(16, 4), pady=4, sticky="w")
-        var = tk.StringVar()
+        var = tk.StringVar(value=default)
         entry = tk.Entry(root, textvariable=var, width=45)
         entry.grid(row=row, column=1, padx=4, pady=4)
         if browse:
@@ -31,10 +34,15 @@ def run_setup_gui():
             )
         return var
 
+    # Projektverzeichnis ist immer projektspezifisch und bleibt daher leer,
+    # die uebrigen Felder aendern sich selten zwischen Projekten und werden
+    # deshalb aus der letzten Eingabe vorbelegt.
     projekt_var = add_row(1, "Projektverzeichnis (schon angelegt, endet auf _V001):", browse=True)
-    server_var = add_row(2, "Serververzeichnis:", browse=True)
-    kuerzel_var = add_row(3, "Benutzerkürzel:")
-    software_var = add_row(4, "Startkommando Programmiersoftware (optional):")
+    server_var = add_row(2, "Serververzeichnis:", browse=True, default=defaults.get("server_dir", ""))
+    kuerzel_var = add_row(3, "Benutzerkürzel:", default=defaults.get("kuerzel", ""))
+    software_var = add_row(
+        4, "Startkommando Programmiersoftware (optional):", default=defaults.get("software_kommando", "")
+    )
 
     def erstellen():
         projekt_dir = projekt_var.get().strip()
@@ -69,6 +77,8 @@ def run_setup_gui():
 
         with open(batch_path, "w", encoding="utf-8") as f:
             f.write(batch_content)
+
+        save_setup_defaults(kuerzel=kuerzel, server_dir=server_dir, software_kommando=software_kommando)
 
         messagebox.showinfo("Fertig", f"Batchdatei erstellt:\n{batch_path}", parent=root)
         root.destroy()

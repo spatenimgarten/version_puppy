@@ -78,6 +78,12 @@ Benutzerkürzel, optional Startkommando der Programmiersoftware) und
 erzeugt daraus `start_<Präfix>.bat` im übergeordneten Verzeichnis —
 danach reicht Doppelklick auf diese Batchdatei für den Alltag.
 
+Kürzel, Serververzeichnis und Software-Kommando ändern sich selten
+zwischen Projekten und werden deshalb beim nächsten `setup`-Lauf als
+Vorbelegung aus `%APPDATA%\version_puppy\setup_defaults.json`
+vorgeschlagen (nur das Projektverzeichnis bleibt immer leer, da
+projektspezifisch).
+
 ### Projekt bearbeiten
 
 Interaktiv über eine kleine Oberfläche mit drei Knöpfen (Version /
