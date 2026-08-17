@@ -13,10 +13,10 @@ durchsuchbare Historie der Versionen.
 
 ## Stand
 
-Aktuell umgesetzt ist der **lokale Versionierungs-Teil** (`version`-Befehl).
-Der Server-Sync-Teil (`sync`) mit Konflikterkennung, Server-Historie
-(JSON + HTML) und automatischem Aufräumen alter Zwischenversionen folgt als
-nächster Schritt.
+Lokale Versionierung (`version`) und Server-Sync (`sync`) sind umgesetzt und
+in die Oberfläche (`gui`) eingebunden. Offen ist noch das automatische
+Öffnen der Programmiersoftware (mit Warten bis zum Schließen) aus der
+Beispiel-Batchdatei — aktuell ein TODO-Platzhalter.
 
 ## Funktionsweise
 
@@ -29,29 +29,51 @@ Das Projektverzeichnis folgt der Namenskonvention `<...>_V<Nummer>`, z.B.
   direkt Richtung V002 läuft.
 - **`--typ zwischenversion`** — zippt den Ordner als rollendes Backup
   (`123456_TIA19_V001_AF_2026-08-17_143205.zip`, Kürzel + Datum + Uhrzeit),
-  ohne den Ordner umzubenennen. Gedacht als Zwischenstand, der beim
-  nächsten `sync` wieder aufgeräumt wird, sobald die zugehörige echte
-  Version existiert (Teil des noch ausstehenden `sync`-Schritts).
+  ohne den Ordner umzubenennen. Dient als Zwischenstand, der beim nächsten
+  `sync` automatisch aufgeräumt wird, sobald die zugehörige echte Version
+  synchronisiert ist.
 
 Jeder Aufruf zippt lokal, berechnet eine SHA256-Prüfsumme des Archivs und
 schreibt einen Eintrag in eine lokale `history.json` im Datenverzeichnis
 (Zeitstempel, Typ, Dateiname, Kommentar, Ersteller-Kürzel, Hash,
-Status `pending`). Es findet **kein Netzwerkzugriff** statt — das ist
-bewusst dem separaten `sync`-Befehl vorbehalten.
+Status `pending`). `version` selbst greift **nicht** auf das Netzwerk zu —
+das erledigt ausschließlich `sync`.
+
+`version_puppy sync`:
+
+- Prüft die Erreichbarkeit des Serververzeichnisses (Hintergrund-Thread mit
+  3-Sekunden-Timeout, damit ein totes Netzlaufwerk nicht dauerhaft blockiert).
+- Kopiert jede lokal wartende Datei, deren Name auf dem Server noch nicht
+  existiert, dorthin und trägt sie in eine kanonische `history.json` +
+  `history.html` im Serververzeichnis ein (auch ohne das Tool einsehbar).
+- Existiert der Dateiname auf dem Server bereits mit **anderem** Hash
+  (z.B. zwei Rechner haben unabhängig voneinander dieselbe Versionsnummer
+  vergeben), wird **nichts überschrieben** — der lokale Eintrag wird als
+  `conflict` markiert. Die Klärung passiert bewusst außerhalb des Tools.
+- Sobald eine echte Version erfolgreich synchronisiert ist, werden alle
+  zugehörigen Zwischenversionen (gleicher Ordnername als Präfix) lokal und
+  auf dem Server automatisch entfernt.
 
 ## Benutzung
 
 Interaktiv über eine kleine Oberfläche mit drei Knöpfen (Version /
-Zwischenversion / Beenden), Kommentar wird dort abgefragt:
+Zwischenversion / Beenden):
 
 ```
 version_puppy gui --source-dir <Pfad zum Projektordner> \
                    --data-dir <Pfad für Historie/Warteschlange> \
-                   --user <Kürzel>
+                   --user <Kürzel> \
+                   --server-dir <Pfad zum Serververzeichnis>
 ```
 
-Oder direkt über die Kommandozeile (z.B. für Skripte/Tests, ohne
-Oberfläche):
+Die Oberfläche prüft beim Start die Servererreichbarkeit (Ampel: grün/rot
+in der Statuszeile) und synchronisiert bei Erreichbarkeit sofort alles
+Ausstehende. Nach jedem "Version"/"Zwischenversion"-Klick wird ebenfalls
+sofort versucht zu synchronisieren. Der Kommentar wird per Dialog
+abgefragt. Enter/Return schließt das Fenster (sicherer Default, falls
+versehentlich gedrückt — im Normalfall soll nichts passieren).
+
+Für Skripte/Hintergrund-Aufrufe ohne Oberfläche:
 
 ```
 version_puppy version --source-dir <Pfad zum Projektordner> \
@@ -59,6 +81,9 @@ version_puppy version --source-dir <Pfad zum Projektordner> \
                        --user <Kürzel> \
                        --typ version|zwischenversion \
                        [--comment "Notiz"]
+
+version_puppy sync --data-dir <Pfad für Historie/Warteschlange> \
+                    --server-dir <Pfad zum Serververzeichnis>
 ```
 
 Als eigenständige `.exe` bauen (keine externen Python-Abhängigkeiten
@@ -75,10 +100,9 @@ Ergebnis liegt danach unter `dist/version_puppy.exe`.
 [`beispiel_start.bat`](beispiel_start.bat) zeigt den geplanten Alltags-
 Workflow: pro Projekt eine eigene, angepasste Kopie dieser Datei. Sie
 ermittelt den aktuellen `_V<Nummer>`-Ordner automatisch (wichtig, da
-`version` ihn umbenennt) und öffnet dann die Oberfläche (`gui`-Befehl).
-Das Öffnen der Programmiersoftware (mit Warten bis zum Schließen) sowie
-der Aufruf von `sync` im Hintergrund sind als TODO markiert und folgen mit
-dem `sync`-Schritt.
+`version` ihn umbenennt), stößt `sync` im Hintergrund an (nicht blockierend)
+und öffnet danach die Oberfläche (`gui`-Befehl). Das Öffnen der
+Programmiersoftware (mit Warten bis zum Schließen) ist als TODO markiert.
 
 ## Lizenz
 

@@ -4,9 +4,11 @@ from tkinter import messagebox, simpledialog
 
 from .core import create_version
 from .naming import NamingError
+from .server_sync import server_reachable
+from .sync import run_sync
 
 
-def run_gui(source_dir, data_dir, user):
+def run_gui(source_dir, data_dir, user, server_dir):
     root = tk.Tk()
     root.title("version_puppy")
     root.resizable(False, False)
@@ -16,6 +18,46 @@ def run_gui(source_dir, data_dir, user):
     tk.Label(
         root, text=f"Projekt: {project_name}", font=("Segoe UI", 10, "bold"), padx=20, pady=10
     ).pack()
+
+    status_frame = tk.Frame(root, padx=20, pady=4)
+    status_frame.pack(fill="x")
+    status_canvas = tk.Canvas(status_frame, width=14, height=14, highlightthickness=0)
+    status_dot = status_canvas.create_oval(2, 2, 12, 12, fill="grey")
+    status_canvas.pack(side="left")
+    status_label = tk.Label(status_frame, text="Server wird geprüft ...")
+    status_label.pack(side="left", padx=(6, 0))
+
+    def set_status(reachable, extra=""):
+        status_canvas.itemconfig(status_dot, fill="#2ecc71" if reachable else "#e74c3c")
+        text = "Server erreichbar" if reachable else "Server nicht erreichbar"
+        if extra:
+            text += f" – {extra}"
+        status_label.config(text=text)
+
+    def sync_now():
+        if not server_reachable(server_dir):
+            set_status(False)
+            return False
+
+        summary = run_sync(data_dir, server_dir)
+        parts = []
+        if summary.synced:
+            parts.append(f"{len(summary.synced)} synchronisiert")
+        if summary.conflicts:
+            parts.append(f"{len(summary.conflicts)} Konflikt(e)")
+        if summary.pruned:
+            parts.append(f"{len(summary.pruned)} aufgeräumt")
+        set_status(True, ", ".join(parts))
+
+        if summary.conflicts:
+            messagebox.showwarning(
+                "Konflikt",
+                "Folgende Dateien existieren bereits mit anderem Inhalt auf dem Server "
+                "und wurden NICHT überschrieben. Bitte manuell klären:\n\n"
+                + "\n".join(summary.conflicts),
+                parent=root,
+            )
+        return True
 
     def handle(typ):
         comment = simpledialog.askstring("Kommentar", "Kommentar (optional):", parent=root) or ""
@@ -34,34 +76,29 @@ def run_gui(source_dir, data_dir, user):
                 f"Bitte manuell umbenennen."
             )
         messagebox.showinfo("Fertig", msg, parent=root)
+        sync_now()
         root.destroy()
 
     button_frame = tk.Frame(root, padx=20, pady=10)
     button_frame.pack()
 
-    # takefocus=0: die Knoepfe sollen nur per Mausklick ausloesen, nicht
-    # ueber Tastaturfokus + Enter (sonst kann versehentliches Enter-Druecken
-    # z.B. "Beenden" ausloesen, wenn dieser Knopf zufaellig den Fokus haelt).
+    # takefocus=0: Knoepfe loesen nur per Mausklick aus, nicht ueber
+    # Tastaturfokus. Enter ist bewusst separat auf "Beenden" gelegt (siehe
+    # unten) - das ist der sichere Default, falls Enter aus Versehen
+    # gedrueckt wird, soll im Normalfall nichts passieren.
     tk.Button(
-        button_frame,
-        text="Version erstellen",
-        width=28,
-        height=2,
-        takefocus=0,
+        button_frame, text="Version erstellen", width=28, height=2, takefocus=0,
         command=lambda: handle("version"),
     ).pack(pady=4)
     tk.Button(
-        button_frame,
-        text="Zwischenversion / Backup",
-        width=28,
-        height=2,
-        takefocus=0,
+        button_frame, text="Zwischenversion / Backup", width=28, height=2, takefocus=0,
         command=lambda: handle("zwischenversion"),
     ).pack(pady=4)
     tk.Button(
         button_frame, text="Beenden", width=28, height=2, takefocus=0, command=root.destroy
     ).pack(pady=4)
 
-    root.bind("<Return>", lambda e: "break")
+    root.bind("<Return>", lambda e: root.destroy())
 
+    root.after(100, sync_now)
     root.mainloop()
