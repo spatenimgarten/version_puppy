@@ -28,7 +28,10 @@ def cmd_sync(args):
     summary = run_sync(args.data_dir, args.server_dir)
     print(f"Synchronisiert: {len(summary.synced)}")
     if summary.conflicts:
-        print(f"Konflikte ({len(summary.conflicts)}): " + ", ".join(summary.conflicts))
+        lines = [f"{new} (Konflikt mit vorhandenem {old})" for new, old in summary.conflicts]
+        print(f"Konflikte ({len(summary.conflicts)}), trotzdem kopiert unter eigenem Namen:")
+        for line in lines:
+            print(f"  {line}")
     if summary.pruned:
         print(f"Aufgeräumt: {len(summary.pruned)}")
 

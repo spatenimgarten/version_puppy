@@ -50,11 +50,13 @@ def run_gui(source_dir, data_dir, user, server_dir):
         set_status(True, ", ".join(parts))
 
         if summary.conflicts:
+            lines = [f"{new}\n   (Konflikt mit vorhandenem {old})" for new, old in summary.conflicts]
             messagebox.showwarning(
                 "Konflikt",
-                "Folgende Dateien existieren bereits mit anderem Inhalt auf dem Server "
-                "und wurden NICHT überschrieben. Bitte manuell klären:\n\n"
-                + "\n".join(summary.conflicts),
+                "Diese Dateien kollidieren mit bereits vorhandenen, anderen Dateien auf dem "
+                "Server und wurden zusätzlich unter eigenem Namen abgelegt (nichts wurde "
+                "überschrieben). Bitte manuell klären, welche Version gültig ist:\n\n"
+                + "\n\n".join(lines),
                 parent=root,
             )
         return True

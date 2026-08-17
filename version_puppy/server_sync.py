@@ -40,9 +40,14 @@ def save_server_history(server_dir, entries):
 
 def _write_html(server_dir, entries):
     rows = "\n".join(
-        "<tr><td>{typ}</td><td>{timestamp}</td><td>{ersteller}</td>"
+        "<tr class=\"{row_class}\"><td>{typ}</td><td>{timestamp}</td><td>{ersteller}</td>"
         "<td>{zip_filename}</td><td>{comment}</td><td><code>{hash_short}</code></td></tr>".format(
-            typ=e["typ"],
+            row_class="konflikt" if e.get("status") == "conflict" else "",
+            typ=(
+                f"KONFLIKT (kollidiert mit {e['conflict_with']})"
+                if e.get("status") == "conflict"
+                else e["typ"]
+            ),
             timestamp=e["timestamp"],
             ersteller=e["ersteller"],
             zip_filename=e["zip_filename"],
@@ -58,6 +63,7 @@ body {{ font-family: sans-serif; margin: 2rem; }}
 table {{ border-collapse: collapse; width: 100%; }}
 th, td {{ border: 1px solid #ccc; padding: 6px 10px; text-align: left; font-size: 0.9rem; }}
 th {{ background: #f0f0f0; }}
+tr.konflikt {{ background: #fdecea; color: #a1260d; }}
 </style></head>
 <body>
 <h1>Versionshistorie</h1>
