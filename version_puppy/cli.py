@@ -42,6 +42,12 @@ def cmd_gui(args):
     run_gui(args.source_dir, args.data_dir, args.user, args.server_dir)
 
 
+def cmd_setup(args):
+    from .setup_gui import run_setup_gui
+
+    run_setup_gui()
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="version_puppy",
@@ -68,6 +74,9 @@ def build_parser():
     p_gui.add_argument("--user", required=True, help="Benutzerkürzel (z.B. AF)")
     p_gui.add_argument("--server-dir", required=True, help="Pfad zum Serververzeichnis")
     p_gui.set_defaults(func=cmd_gui)
+
+    p_setup = sub.add_parser("setup", help="Neues Projekt einrichten (fragt Angaben ab, erzeugt die Projekt-Batchdatei)")
+    p_setup.set_defaults(func=cmd_setup)
 
     return parser
 

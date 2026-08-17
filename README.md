@@ -13,10 +13,18 @@ durchsuchbare Historie der Versionen.
 
 ## Stand
 
-Lokale Versionierung (`version`) und Server-Sync (`sync`) sind umgesetzt und
-in die Oberfläche (`gui`) eingebunden. Offen ist noch das automatische
-Öffnen der Programmiersoftware (mit Warten bis zum Schließen) aus der
-Beispiel-Batchdatei — aktuell ein TODO-Platzhalter.
+Zwei Use Cases:
+
+- **Projekt bearbeiten** — Lokale Versionierung (`version`) und Server-Sync
+  (`sync`) sind umgesetzt und in die Oberfläche (`gui`) eingebunden.
+- **Neues Projekt anlegen** — das eigentliche Anlegen des Projekts (in TIA
+  Portal/SIMATIC Manager) bleibt Handarbeit; der `setup`-Assistent fragt
+  nur die nötigen Angaben ab und erzeugt daraus die passende
+  Projekt-Batchdatei.
+
+Offen ist noch das automatische Öffnen der Programmiersoftware (mit Warten
+bis zum Schließen) — aktuell ein TODO-Platzhalter in der generierten
+Batchdatei.
 
 ## Funktionsweise
 
@@ -55,6 +63,22 @@ das erledigt ausschließlich `sync`.
   auf dem Server automatisch entfernt.
 
 ## Benutzung
+
+### Neues Projekt anlegen
+
+Projekt zuerst wie gewohnt in TIA Portal/SIMATIC Manager anlegen, das
+Verzeichnis muss auf `_V001` enden (z.B. `123456_TIA19_V001`). Danach:
+
+```
+version_puppy setup
+```
+
+Öffnet einen kleinen Assistenten (Projektverzeichnis, Serververzeichnis,
+Benutzerkürzel, optional Startkommando der Programmiersoftware) und
+erzeugt daraus `start_<Präfix>.bat` im übergeordneten Verzeichnis —
+danach reicht Doppelklick auf diese Batchdatei für den Alltag.
+
+### Projekt bearbeiten
 
 Interaktiv über eine kleine Oberfläche mit drei Knöpfen (Version /
 Zwischenversion / Beenden):
@@ -97,12 +121,13 @@ Ergebnis liegt danach unter `dist/version_puppy.exe`.
 
 ## Beispiel-Batchdatei
 
-[`beispiel_start.bat`](beispiel_start.bat) zeigt den geplanten Alltags-
-Workflow: pro Projekt eine eigene, angepasste Kopie dieser Datei. Sie
-ermittelt den aktuellen `_V<Nummer>`-Ordner automatisch (wichtig, da
-`version` ihn umbenennt), stößt `sync` im Hintergrund an (nicht blockierend)
-und öffnet danach die Oberfläche (`gui`-Befehl). Das Öffnen der
-Programmiersoftware (mit Warten bis zum Schließen) ist als TODO markiert.
+[`beispiel_start.bat`](beispiel_start.bat) zeigt zur Referenz, wie eine
+Projekt-Batchdatei aussieht (inhaltlich dasselbe, was `setup` automatisch
+erzeugt): ermittelt den aktuellen `_V<Nummer>`-Ordner automatisch (wichtig,
+da `version` ihn umbenennt), stößt `sync` im Hintergrund an (nicht
+blockierend) und öffnet danach die Oberfläche (`gui`-Befehl). Das Öffnen
+der Programmiersoftware (mit Warten bis zum Schließen) ist als TODO
+markiert.
 
 ## Lizenz
 

@@ -1,3 +1,4 @@
+import os
 import re
 
 VERSION_PATTERN = re.compile(r"^(.*_V)(\d+)$")
@@ -21,3 +22,13 @@ def parse_version_name(dir_name):
 def next_version_dir_name(dir_name):
     prefix, number, width = parse_version_name(dir_name)
     return f"{prefix}{str(number + 1).zfill(width)}"
+
+
+def split_project_dir(source_dir):
+    """Gibt (prefix_ohne_'_V', basisverzeichnis) fuer ein bestehendes Projektverzeichnis zurueck."""
+    source_dir = os.path.abspath(source_dir)
+    current_name = os.path.basename(source_dir.rstrip(os.sep))
+    prefix_with_v, _number, _width = parse_version_name(current_name)
+    prefix = prefix_with_v[:-2]  # "..._V" -> "..."
+    basis = os.path.dirname(source_dir)
+    return prefix, basis
