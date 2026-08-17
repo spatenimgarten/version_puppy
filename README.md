@@ -11,79 +11,63 @@ Anlage ohne Netzwerkverbindung), muss das Archiv später von Hand
 nachkopiert werden — das wird manchmal vergessen. Zusätzlich gibt es keine
 durchsuchbare Historie der Versionen.
 
-## Lösung
+## Stand
 
-`version_puppy` automatisiert genau das:
+Aktuell umgesetzt ist der **lokale Versionierungs-Teil** (`version`-Befehl).
+Der Server-Sync-Teil (`sync`) mit Konflikterkennung, Server-Historie
+(JSON + HTML) und automatischem Aufräumen alter Zwischenversionen folgt als
+nächster Schritt.
 
-1. **`create`** — zippt ein Projektverzeichnis, vergibt automatisch eine
-   fortlaufende Versionsnummer + Zeitstempel, kopiert das Archiv auf den
-   Server. Ist der Server gerade nicht erreichbar, landet das Archiv in
-   einer lokalen Warteschlange (`data/pending/<projekt>/`) statt verloren
-   zu gehen.
-2. **`sync`** — holt alle in der Warteschlange wartenden Archive nach,
-   sobald der Server wieder erreichbar ist. Gedacht für einen
-   wiederkehrenden Aufruf (z.B. Windows-Taskplaner beim Login oder alle
-   15 Minuten), damit nichts vergessen wird.
-3. **`history`** — zeigt die Versionshistorie eines Projekts an
-   (Versionsnummer, Zeitstempel, Kommentar, Sync-Status, Dateiname).
+## Funktionsweise
 
-Die Historie wird lokal als JSON geführt (`data/history/<projekt>.json`)
-und bei jedem erfolgreichen Sync zusätzlich als Kopie ins
-Serververzeichnis geschrieben (`_history_<projekt>.json`), damit sie auch
-ohne dieses Tool auf dem Server einsehbar ist.
+Das Projektverzeichnis folgt der Namenskonvention `<...>_V<Nummer>`, z.B.
+`123456_TIA19_V001`. `version_puppy version` kennt zwei Typen:
 
-## Installation / Setup
+- **`--typ version`** — zippt den Ordner in seinem aktuellen Namen
+  (`123456_TIA19_V001.zip`) und benennt das Quellverzeichnis danach auf die
+  nächste Nummer um (`123456_TIA19_V002`), damit die nächste Bearbeitung
+  direkt Richtung V002 läuft.
+- **`--typ zwischenversion`** — zippt den Ordner als rollendes Backup
+  (`123456_TIA19_V001_AF_2026-08-17_143205.zip`, Kürzel + Datum + Uhrzeit),
+  ohne den Ordner umzubenennen. Gedacht als Zwischenstand, der beim
+  nächsten `sync` wieder aufgeräumt wird, sobald die zugehörige echte
+  Version existiert (Teil des noch ausstehenden `sync`-Schritts).
 
-1. `config.example.json` nach `config.json` kopieren und die eigenen
-   Projekte eintragen:
-
-   ```json
-   {
-     "projects": {
-       "BeispielAnlage": {
-         "source_dir": "C:/TIA_Projects/BeispielAnlage",
-         "server_dir": "//fileserver/Versionen/BeispielAnlage"
-       }
-     }
-   }
-   ```
-
-2. Für den Alltagsgebrauch als eigenständige `.exe` bauen (keine externen
-   Python-Abhängigkeiten nötig — nur Standardbibliothek):
-
-   ```
-   build.bat
-   ```
-
-   Ergebnis liegt danach unter `dist/version_puppy.exe`. Diese Datei
-   zusammen mit `config.json`, `run.bat` und `sync_task.bat` an einen
-   festen Ort kopieren (z.B. neben die TIA-Portal-Exporte).
+Jeder Aufruf zippt lokal, berechnet eine SHA256-Prüfsumme des Archivs und
+schreibt einen Eintrag in eine lokale `history.json` im Datenverzeichnis
+(Zeitstempel, Typ, Dateiname, Kommentar, Ersteller-Kürzel, Hash,
+Status `pending`). Es findet **kein Netzwerkzugriff** statt — das ist
+bewusst dem separaten `sync`-Befehl vorbehalten.
 
 ## Benutzung
 
 ```
-version_puppy create <projekt> [--comment "Notiz"]
-version_puppy sync
-version_puppy history <projekt>
+version_puppy version --source-dir <Pfad zum Projektordner> \
+                       --data-dir <Pfad für Historie/Warteschlange> \
+                       --user <Kürzel> \
+                       --typ version|zwischenversion \
+                       [--comment "Notiz"]
 ```
 
-Oder bequem per Doppelklick/Drag&Drop:
+Als eigenständige `.exe` bauen (keine externen Python-Abhängigkeiten
+nötig — nur Standardbibliothek):
 
-- **`run.bat`** — Projektordner draufziehen (Ordnername muss dem
-  Projektnamen in `config.json` entsprechen), erstellt sofort eine neue
-  Version.
-- **`sync_task.bat`** — für den Windows-Taskplaner gedacht, holt
-  ausstehende Kopien nach. Läuft ohne Nutzerinteraktion durch.
+```
+build.bat
+```
 
-## Bekannte Einschränkungen (v1)
+Ergebnis liegt danach unter `dist/version_puppy.exe`.
 
-- Die Erreichbarkeitsprüfung des Servers nutzt einen 3-Sekunden-Timeout
-  per Hintergrund-Thread, damit ein totes Netzlaufwerk das Tool nicht
-  dauerhaft blockiert — bei sehr langsamen Verbindungen kann das
-  fälschlich als "nicht erreichbar" gewertet werden.
-- Kein automatisches Erkennen neuer Exporte (kein Ordner-Watcher) — das
-  Auslösen von `create` bleibt bewusst manuell, nur das Nachholen der
-  Server-Kopie (`sync`) läuft automatisiert im Hintergrund.
+## Beispiel-Batchdatei
+
+[`beispiel_start.bat`](beispiel_start.bat) zeigt den geplanten Alltags-
+Workflow: pro Projekt eine eigene, angepasste Kopie dieser Datei. Sie
+ermittelt den aktuellen `_V<Nummer>`-Ordner automatisch (wichtig, da
+`version` ihn umbenennt), zeigt ein Menü (Version / Zwischenversion /
+Beenden), fragt optional einen Kommentar ab und ruft `version_puppy`
+entsprechend auf. Das Öffnen der Programmiersoftware (mit Warten bis zum
+Schließen) sowie der Aufruf von `sync` im Hintergrund sind als TODO markiert
+und folgen mit dem `sync`-Schritt.
 
 ## Lizenz
 
