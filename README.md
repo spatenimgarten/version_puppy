@@ -41,6 +41,18 @@ bewusst dem separaten `sync`-Befehl vorbehalten.
 
 ## Benutzung
 
+Interaktiv über eine kleine Oberfläche mit drei Knöpfen (Version /
+Zwischenversion / Beenden), Kommentar wird dort abgefragt:
+
+```
+version_puppy gui --source-dir <Pfad zum Projektordner> \
+                   --data-dir <Pfad für Historie/Warteschlange> \
+                   --user <Kürzel>
+```
+
+Oder direkt über die Kommandozeile (z.B. für Skripte/Tests, ohne
+Oberfläche):
+
 ```
 version_puppy version --source-dir <Pfad zum Projektordner> \
                        --data-dir <Pfad für Historie/Warteschlange> \
@@ -63,11 +75,10 @@ Ergebnis liegt danach unter `dist/version_puppy.exe`.
 [`beispiel_start.bat`](beispiel_start.bat) zeigt den geplanten Alltags-
 Workflow: pro Projekt eine eigene, angepasste Kopie dieser Datei. Sie
 ermittelt den aktuellen `_V<Nummer>`-Ordner automatisch (wichtig, da
-`version` ihn umbenennt), zeigt ein Menü (Version / Zwischenversion /
-Beenden), fragt optional einen Kommentar ab und ruft `version_puppy`
-entsprechend auf. Das Öffnen der Programmiersoftware (mit Warten bis zum
-Schließen) sowie der Aufruf von `sync` im Hintergrund sind als TODO markiert
-und folgen mit dem `sync`-Schritt.
+`version` ihn umbenennt) und öffnet dann die Oberfläche (`gui`-Befehl).
+Das Öffnen der Programmiersoftware (mit Warten bis zum Schließen) sowie
+der Aufruf von `sync` im Hintergrund sind als TODO markiert und folgen mit
+dem `sync`-Schritt.
 
 ## Lizenz
 

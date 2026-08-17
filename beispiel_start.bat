@@ -53,28 +53,11 @@ REM   start /wait "" "C:\Program Files\Siemens\...\TIA Portal.exe" "%QUELLVERZEI
 REM Fuer den ersten Test des version-Teils erstmal weggelassen.
 REM ------------------------------------------------------------
 
-:MENU
-echo.
-echo Aktuelles Projektverzeichnis: %QUELLVERZEICHNIS%
-echo Was soll gemacht werden?
-echo   1 = Version erstellen
-echo   2 = Zwischenversion / Backup erstellen
-echo   3 = Beenden (nichts passiert)
-set /p AUSWAHL="Auswahl (1/2/3): "
-
-set TYP=
-if "%AUSWAHL%"=="3" goto ENDE
-if "%AUSWAHL%"=="1" set TYP=version
-if "%AUSWAHL%"=="2" set TYP=zwischenversion
-if not defined TYP goto MENU
-
-set /p KOMMENTAR="Kommentar (optional, Enter zum Ueberspringen): "
-
+REM Oberflaeche mit drei Knoepfen (Version / Zwischenversion / Beenden)
+REM oeffnen. Kommentar-Eingabe und Ausfuehrung passieren dort, nicht mehr
+REM in dieser Batchdatei.
 if exist "%TOOL%" (
-    "%TOOL%" version --source-dir "%QUELLVERZEICHNIS%" --data-dir "%DATENVERZEICHNIS%" --user "%BENUTZER_KUERZEL%" --typ %TYP% --comment "%KOMMENTAR%"
+    "%TOOL%" gui --source-dir "%QUELLVERZEICHNIS%" --data-dir "%DATENVERZEICHNIS%" --user "%BENUTZER_KUERZEL%"
 ) else (
-    python -m version_puppy version --source-dir "%QUELLVERZEICHNIS%" --data-dir "%DATENVERZEICHNIS%" --user "%BENUTZER_KUERZEL%" --typ %TYP% --comment "%KOMMENTAR%"
+    python -m version_puppy gui --source-dir "%QUELLVERZEICHNIS%" --data-dir "%DATENVERZEICHNIS%" --user "%BENUTZER_KUERZEL%"
 )
-
-:ENDE
-pause
