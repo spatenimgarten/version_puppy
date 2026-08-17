@@ -39,16 +39,29 @@ def run_gui(source_dir, data_dir, user):
     button_frame = tk.Frame(root, padx=20, pady=10)
     button_frame.pack()
 
+    # takefocus=0: die Knoepfe sollen nur per Mausklick ausloesen, nicht
+    # ueber Tastaturfokus + Enter (sonst kann versehentliches Enter-Druecken
+    # z.B. "Beenden" ausloesen, wenn dieser Knopf zufaellig den Fokus haelt).
     tk.Button(
-        button_frame, text="Version erstellen", width=28, height=2, command=lambda: handle("version")
+        button_frame,
+        text="Version erstellen",
+        width=28,
+        height=2,
+        takefocus=0,
+        command=lambda: handle("version"),
     ).pack(pady=4)
     tk.Button(
         button_frame,
         text="Zwischenversion / Backup",
         width=28,
         height=2,
+        takefocus=0,
         command=lambda: handle("zwischenversion"),
     ).pack(pady=4)
-    tk.Button(button_frame, text="Beenden", width=28, height=2, command=root.destroy).pack(pady=4)
+    tk.Button(
+        button_frame, text="Beenden", width=28, height=2, takefocus=0, command=root.destroy
+    ).pack(pady=4)
+
+    root.bind("<Return>", lambda e: "break")
 
     root.mainloop()
