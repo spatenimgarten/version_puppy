@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "BeispielAnlage": {
+      "source_dir": "C:/TIA_Projects/BeispielAnlage",
+      "server_dir": "//fileserver/Versionen/BeispielAnlage"
+    }
+  }
+}
