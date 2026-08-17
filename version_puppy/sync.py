@@ -84,7 +84,8 @@ def run_sync(data_dir, server_dir):
 
         os.makedirs(server_dir, exist_ok=True)
 
-        if existing is not None:
+        is_conflict = existing is not None
+        if is_conflict:
             # Gleicher Zielname, anderer Inhalt: trotzdem kopieren, aber unter
             # eindeutigem Namen - nichts geht verloren, aber die bestehende
             # Datei wird nicht stillschweigend ueberschrieben.
@@ -101,13 +102,19 @@ def run_sync(data_dir, server_dir):
 
         shutil.copy2(local_zip_path, os.path.join(server_dir, target_name))
         server_copy = {k: v for k, v in entry.items() if k != "status"}
-        if target_name != original_zip_filename:
+        if is_conflict:
             server_copy["status"] = "conflict"
             server_copy["conflict_with"] = original_zip_filename
         server_entries.append(server_copy)
         server_by_name[target_name] = server_copy
 
-        os.remove(local_zip_path)
+        if is_conflict:
+            # Lokale Kopie NICHT loeschen, sondern auf denselben Namen wie auf
+            # dem Server umbenennen - bleibt griffbereit fuer die manuelle
+            # Klaerung statt nur noch auf dem Server zu liegen.
+            os.rename(local_zip_path, os.path.join(pending_dir, target_name))
+        else:
+            os.remove(local_zip_path)
 
         if entry["typ"] == "version":
             to_remove |= _prune_superseded_zwischenversionen(
