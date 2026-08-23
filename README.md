@@ -11,18 +11,34 @@ lokal mitgefuehrt), aber noch nicht implementiert.
 
 ## Installation
 
-1. Ordner z.B. nach `C:\Tools\Version_Puppy` kopieren.
-2. `Version_Puppy.ps1` ausfuehren (mind. PowerShell 5.1 erforderlich, das
-   Skript prueft das selbst und gibt bei Bedarf einen Hinweis).
-3. Beim ersten Start wird `config.json` automatisch mit Standardwerten
-   angelegt. `kuerzel` und ggf. weitere `werkzeuge`-Eintraege danach von
-   Hand nachtragen.
+`install.ps1` ist ein eigenstaendiger Installer - es reicht, nur diese eine
+Datei auf die Zielmaschine zu kopieren:
+
+1. `install.ps1` z.B. nach `C:\Tools\Version_Puppy\install.ps1` kopieren.
+2. Ausfuehren (mind. PowerShell 5.1 erforderlich):
+   ```
+   powershell.exe -ExecutionPolicy Bypass -File "C:\Tools\Version_Puppy\install.ps1"
+   ```
+   Laedt `Version_Puppy.ps1` und `update.ps1` automatisch von GitHub nach
+   (main-Branch), richtet Autostart und stuendlichen Update-Check ein
+   (siehe naechster Abschnitt) und bietet an, gleich zu starten.
+3. Beim ersten Start von Version_Puppy wird `config.json` automatisch mit
+   Standardwerten angelegt. `kuerzel` und ggf. weitere `werkzeuge`-Eintraege
+   danach von Hand nachtragen.
+
+Danach sorgt der Update-Task dafuer, dass neue Versionen automatisch
+ankommen - kein erneutes manuelles Kopieren noetig.
 
 ## Autostart mit Windows
 
-Damit Version_Puppy nicht jedes Mal manuell gestartet werden muss, im
-Autostart-Ordner eine Verknuepfung anlegen (kein Admin noetig, gilt nur fuer
-den aktuell angemeldeten Benutzer):
+Richtet `install.ps1` automatisch mit ein (siehe oben). Legt eine
+Verknuepfung im Autostart-Ordner des aktuellen Benutzers an (kein Admin
+noetig). Erneutes Ausfuehren von `install.ps1` ueberschreibt die
+Verknuepfung einfach neu (z.B. nach Verschieben des Installationsordners).
+
+Ganz manuell geht es genauso - im Autostart-Ordner selbst eine Verknuepfung
+anlegen (kein Admin noetig, gilt nur fuer den aktuell angemeldeten
+Benutzer), falls man `install.ps1` lieber nicht ausfuehren moechte:
 
 1. `Win+R` -> `shell:startup` -> Enter (oeffnet den Autostart-Ordner).
 2. Darin eine neue Verknuepfung anlegen mit folgendem Ziel (Installationspfad
@@ -30,19 +46,6 @@ den aktuell angemeldeten Benutzer):
    ```
    powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Tools\Version_Puppy\Version_Puppy.ps1"
    ```
-
-Alternativ per PowerShell einmalig automatisch erzeugen (Installationspfad
-in `$Ziel` anpassen):
-```powershell
-$Ziel = "C:\Tools\Version_Puppy\Version_Puppy.ps1"
-$Verknuepfung = Join-Path ([Environment]::GetFolderPath("Startup")) "Version_Puppy.lnk"
-$shell = New-Object -ComObject WScript.Shell
-$lnk = $shell.CreateShortcut($Verknuepfung)
-$lnk.TargetPath = "powershell.exe"
-$lnk.Arguments  = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Ziel`""
-$lnk.WorkingDirectory = Split-Path $Ziel
-$lnk.Save()
-```
 
 `-WindowStyle Hidden` unterdrueckt nur das PowerShell-Konsolenfenster - die
 WinForms-Popups (Versionierung, neues Projekt registrieren) erscheinen
@@ -55,6 +58,23 @@ zuverlaessig klappen soll): Aufgabenplanung -> Aufgabe erstellen -> Trigger
 angemeldet ist" waehlen - die GUI-Popups brauchen eine interaktive Sitzung,
 "Unabhaengig von der Benutzeranmeldung ausfuehren" wuerde sie unsichtbar
 im Hintergrund laufen lassen.
+
+## Update
+
+`install.ps1` richtet neben dem Autostart auch einen stuendlichen Scheduled
+Task (`Version_Puppy_Update`) ein, der `update.ps1` ausfuehrt. Der laedt
+den aktuellen `main`-Branch als ZIP von GitHub (kein Git auf der
+Zielmaschine noetig), vergleicht die Dateien per Hash und ersetzt nur, was
+sich geaendert hat. `config.json` ist nicht Teil des Repos und bleibt
+unberuehrt. Gab es eine Aenderung, wird der laufende Version_Puppy-Prozess
+beendet und mit dem neuen Stand neu gestartet - laufende Ueberwachung geht
+dabei kurz aus, ein evtl. offenes Versions-Popup wuerde mitbeendet.
+
+Manuell anstossen: `powershell.exe -ExecutionPolicy Bypass -File
+"C:\Tools\Version_Puppy\update.ps1"`. Falls `Register-ScheduledTask` in
+`install.ps1` fehlschlaegt (z.B. durch Gruppenrichtlinien auf gesperrten
+Engineering-PCs), muss der Task manuell in der Aufgabenplanung angelegt
+werden (Trigger: taeglich wiederholen alle 1 Stunde, Aktion wie oben).
 
 ## Funktionsweise (Kurzfassung)
 
