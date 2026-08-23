@@ -129,6 +129,13 @@ wirken also ohne Neustart:
   Werkzeugliste ueber mehrere Maschinen hinweg ist also unbedenklich, auch
   wenn nicht jede Maschine jedes Tool installiert hat.
 
+  [`werkzeuge.example.json`](werkzeuge.example.json) ist Teil des Repos
+  (im Gegensatz zu `werkzeuge.json` selbst) und dient als Vorlage mit
+  echten Beispiel-Eintraegen. `install.ps1` kopiert sie bei der
+  Erstinstallation automatisch nach `werkzeuge.json`, falls dort noch
+  keine existiert - eine bereits vorhandene, angepasste `werkzeuge.json`
+  wird dabei nie ueberschrieben.
+
 ## Naechste Schritte
 
 - Manager Stufe 2: Server-Sync (SHA256-Vergleich, alle 10 Min.), Konflikt-

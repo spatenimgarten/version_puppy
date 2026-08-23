@@ -1,0 +1,7 @@
+[
+    {
+        "name": "TIA",
+        "prozessName": "Siemens.Automation.Portal.exe",
+        "erweiterungsMuster": "^ap(\\d+)$"
+    }
+]

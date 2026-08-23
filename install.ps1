@@ -18,10 +18,12 @@ if ($PSVersionTable.PSVersion -lt [Version]"5.1") {
     exit 1
 }
 
-$InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$SkriptPfad = Join-Path $InstallDir "Version_Puppy.ps1"
-$UpdatePfad = Join-Path $InstallDir "update.ps1"
-$RepoZipUrl = "https://github.com/spatenimgarten/version_puppy/archive/refs/heads/main.zip"
+$InstallDir      = Split-Path -Parent $MyInvocation.MyCommand.Path
+$SkriptPfad      = Join-Path $InstallDir "Version_Puppy.ps1"
+$UpdatePfad      = Join-Path $InstallDir "update.ps1"
+$WerkzeugePfad   = Join-Path $InstallDir "werkzeuge.json"
+$BeispielPfad    = Join-Path $InstallDir "werkzeuge.example.json"
+$RepoZipUrl      = "https://github.com/spatenimgarten/version_puppy/archive/refs/heads/main.zip"
 
 if (-not (Test-Path $SkriptPfad)) {
     Write-Host "Version_Puppy.ps1 fehlt noch in $InstallDir - lade aktuellen Stand von GitHub..." -ForegroundColor Yellow
@@ -42,6 +44,11 @@ if (-not (Test-Path $SkriptPfad)) {
     }
     Remove-Item $TempExtract -Recurse -Force
     Write-Host "Heruntergeladen nach $InstallDir." -ForegroundColor Green
+}
+
+if ((-not (Test-Path $WerkzeugePfad)) -and (Test-Path $BeispielPfad)) {
+    Copy-Item -Path $BeispielPfad -Destination $WerkzeugePfad
+    Write-Host "werkzeuge.json aus werkzeuge.example.json angelegt - bei Bedarf anpassen." -ForegroundColor Green
 }
 
 $Verknuepfung = Join-Path ([Environment]::GetFolderPath("Startup")) "Version_Puppy.lnk"
