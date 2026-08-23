@@ -152,30 +152,33 @@ function Get-ProjektKandidaten {
 #   Version:         {NR}{tz}{WERKZEUG}-V{WVERSION}{tz}V{NNN}.zip
 #   Zwischenversion:  ... {tz}V{NNN}{tz}{KUERZEL}{tz}{TIMESTAMP}.zip
 #
-#   Parsing (fuer naechste Nummer): Dateiname am Trennzeichen splitten,
-#   letztes Segment das exakt ^V\d+$ entspricht = laufende Nummer.
+#   Parsing (fuer naechste Nummer): nur Dateien mit dem eigenen
+#   Projekt-Praefix zaehlen (Zielpfad kann sich mehrere Projekte teilen),
+#   direkt danach steht V{NNN}.
 # ============================================================
 
-function Get-VersionenOrdner {
-    param([string]$Projektpfad)
-    Join-Path $Projektpfad "Versionen"
+function Get-VersionsPraefix {
+    param($Projekt, $GlobalConfig)
+    $tz = $GlobalConfig.trennzeichen
+    "$($Projekt.projektnummer)$tz$($Projekt.werkzeug)-V$($Projekt.werkzeugVersion)$tz"
 }
 
 function Get-NaechsteVersionsnummer {
     param(
-        [string]$Projektpfad,
-        [string]$Trennzeichen
+        [string]$VersionenOrdner,
+        [string]$Praefix
     )
-    $versionenOrdner = Get-VersionenOrdner -Projektpfad $Projektpfad
-    if (-not (Test-Path $versionenOrdner)) { return 1 }
+    if (-not (Test-Path $VersionenOrdner)) { return 1 }
 
-    $dateien = Get-ChildItem -Path $versionenOrdner -Filter "*.zip" -File -ErrorAction SilentlyContinue
+    # Nur Dateien des eigenen Projekts zaehlen - der Zielordner kann sich
+    # mehrere Projekte teilen (Praefix aus Projektnummer+Werkzeug trennt sie).
+    $dateien = Get-ChildItem -Path $VersionenOrdner -Filter "*.zip" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.BaseName.StartsWith($Praefix) }
     $nummern = @(
         foreach ($datei in $dateien) {
-            $teile = $datei.BaseName -split [regex]::Escape($Trennzeichen)
-            $versionsSegment = $teile | Where-Object { $_ -match '^V\d+$' } | Select-Object -Last 1
-            if ($versionsSegment) {
-                [int]($versionsSegment -replace '^V0*', '')
+            $rest = $datei.BaseName.Substring($Praefix.Length)
+            if ($rest -match '^V(\d+)') {
+                [int]$Matches[1]
             }
         }
     )
@@ -194,7 +197,7 @@ function Build-Versionsdateiname {
     $tz     = $GlobalConfig.trennzeichen
     $nnnStr = "V{0:D3}" -f $Nummer
 
-    $kern = "$($Projekt.projektnummer)$tz$($Projekt.werkzeug)-V$($Projekt.werkzeugVersion)$tz$nnnStr"
+    $kern = "$(Get-VersionsPraefix -Projekt $Projekt -GlobalConfig $GlobalConfig)$nnnStr"
 
     if ($Typ -eq "Zwischenversion") {
         $timestamp = Get-Date -Format "yyyyMMddHHmmss"
@@ -218,12 +221,13 @@ function New-ProjektVersion {
         [string]$Typ
     )
 
-    $versionenOrdner = Get-VersionenOrdner -Projektpfad $Projekt.pfad
+    $versionenOrdner = $Projekt.zielpfad
     if (-not (Test-Path $versionenOrdner)) {
-        New-Item -ItemType Directory -Path $versionenOrdner | Out-Null
+        New-Item -ItemType Directory -Path $versionenOrdner -Force | Out-Null
     }
 
-    $nummer    = Get-NaechsteVersionsnummer -Projektpfad $Projekt.pfad -Trennzeichen $Config.global.trennzeichen
+    $praefix   = Get-VersionsPraefix -Projekt $Projekt -GlobalConfig $Config.global
+    $nummer    = Get-NaechsteVersionsnummer -VersionenOrdner $versionenOrdner -Praefix $praefix
     $dateiname = Build-Versionsdateiname -Projekt $Projekt -GlobalConfig $Config.global -Nummer $nummer -Typ $Typ
     $zielPfad  = Join-Path $versionenOrdner $dateiname
 
@@ -262,6 +266,8 @@ function New-ProjektVersion {
     # In Sync-Warteliste eintragen (Stufe 2 arbeitet diese ab)
     $Config.ausstehendeSyncs += [PSCustomObject]@{
         projektpfad = $Projekt.pfad
+        zielpfad    = $Projekt.zielpfad
+        serverpfad  = $Projekt.serverpfad
         dateiname   = $dateiname
         erstelltAm  = (Get-Date).ToString("s")
         status      = "wartend"
@@ -284,7 +290,7 @@ function Show-NeuesProjektFenster {
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Neues Projekt registrieren"
-    $form.Size = New-Object System.Drawing.Size(420, 380)
+    $form.Size = New-Object System.Drawing.Size(420, 460)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
@@ -350,6 +356,43 @@ function Show-NeuesProjektFenster {
     $txtName.Location = New-Object System.Drawing.Point(150, ($y - 3))
     $txtName.Width = 200
     $form.Controls.Add($txtName)
+    $y += 30
+
+    $lblZiel = New-Object System.Windows.Forms.Label
+    $lblZiel.Text = "Zielpfad (Versionen):"
+    $lblZiel.Location = New-Object System.Drawing.Point(15, $y)
+    $lblZiel.AutoSize = $true
+    $form.Controls.Add($lblZiel)
+    $txtZiel = New-Object System.Windows.Forms.TextBox
+    $elternordner = Split-Path -Parent $Ordnerpfad
+    $txtZiel.Text = Join-Path $elternordner "Versionen"
+    $txtZiel.Location = New-Object System.Drawing.Point(150, ($y - 3))
+    $txtZiel.Width = 170
+    $form.Controls.Add($txtZiel)
+    $btnZielDurchsuchen = New-Object System.Windows.Forms.Button
+    $btnZielDurchsuchen.Text = "..."
+    $btnZielDurchsuchen.Location = New-Object System.Drawing.Point(325, ($y - 4))
+    $btnZielDurchsuchen.Width = 30
+    $btnZielDurchsuchen.Add_Click({
+        $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dlg.Description = "Zielordner fuer Versionen auswaehlen"
+        if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $txtZiel.Text = $dlg.SelectedPath
+        }
+    })
+    $form.Controls.Add($btnZielDurchsuchen)
+    $y += 30
+
+    $lblServer = New-Object System.Windows.Forms.Label
+    $lblServer.Text = "Serverpfad:"
+    $lblServer.Location = New-Object System.Drawing.Point(15, $y)
+    $lblServer.AutoSize = $true
+    $form.Controls.Add($lblServer)
+    $txtServer = New-Object System.Windows.Forms.TextBox
+    $txtServer.Text = ""
+    $txtServer.Location = New-Object System.Drawing.Point(150, ($y - 3))
+    $txtServer.Width = 235
+    $form.Controls.Add($txtServer)
     $y += 40
 
     $script:neuesProjektErgebnis = $null
@@ -367,9 +410,29 @@ function Show-NeuesProjektFenster {
             ) | Out-Null
             return
         }
+        if ([string]::IsNullOrWhiteSpace($txtZiel.Text)) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Bitte einen Zielpfad fuer die Versionen angeben.",
+                "Zielpfad fehlt",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace($txtServer.Text)) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Bitte einen Serverpfad angeben.",
+                "Serverpfad fehlt",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+            return
+        }
         $gewaehlterKandidat = $Kandidaten[$liste.SelectedIndex]
         $script:neuesProjektErgebnis = [PSCustomObject]@{
             pfad            = $Ordnerpfad
+            zielpfad        = $txtZiel.Text
+            serverpfad      = $txtServer.Text
             projektnummer   = $txtNr.Text
             name            = $txtName.Text
             werkzeug        = $gewaehlterKandidat.werkzeug
