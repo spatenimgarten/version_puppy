@@ -18,6 +18,10 @@ $TempExtract = Join-Path $env:TEMP "version_puppy_update_extract"
 function Write-Log {
     param([string]$Nachricht)
     try {
+        # Einfache Ein-Generationen-Rotation, damit das Log nicht unbegrenzt waechst.
+        if ((Test-Path $LogPfad) -and (Get-Item $LogPfad).Length -gt 2MB) {
+            Move-Item -Path $LogPfad -Destination "$LogPfad.old" -Force
+        }
         "$(Get-Date -Format 's') [update.ps1] $Nachricht" | Add-Content -Path $LogPfad -Encoding UTF8
     } catch { }
 }

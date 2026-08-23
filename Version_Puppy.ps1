@@ -34,6 +34,11 @@ $LogPfad = Join-Path $InstallVerzeichnis "version_puppy.log"
 function Write-Log {
     param([string]$Nachricht)
     try {
+        # Einfache Ein-Generationen-Rotation, damit das Log bei einem
+        # dauerhaft laufenden Hintergrunddienst nicht unbegrenzt waechst.
+        if ((Test-Path $LogPfad) -and (Get-Item $LogPfad).Length -gt 2MB) {
+            Move-Item -Path $LogPfad -Destination "$LogPfad.old" -Force
+        }
         "$(Get-Date -Format 's') [Version_Puppy.ps1] $Nachricht" | Add-Content -Path $LogPfad -Encoding UTF8
     } catch { }
 }

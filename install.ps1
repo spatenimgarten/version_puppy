@@ -29,6 +29,10 @@ $RepoZipUrl      = "https://github.com/spatenimgarten/version_puppy/archive/refs
 function Write-Log {
     param([string]$Nachricht)
     try {
+        # Einfache Ein-Generationen-Rotation, damit das Log nicht unbegrenzt waechst.
+        if ((Test-Path $LogPfad) -and (Get-Item $LogPfad).Length -gt 2MB) {
+            Move-Item -Path $LogPfad -Destination "$LogPfad.old" -Force
+        }
         "$(Get-Date -Format 's') [install.ps1] $Nachricht" | Add-Content -Path $LogPfad -Encoding UTF8
     } catch { }
 }

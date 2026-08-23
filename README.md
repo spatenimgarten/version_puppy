@@ -94,6 +94,11 @@ Update-Check (z.B. Download-Fehler) von aussen nicht erkennbar. Popups
 Sinn ergeben - das Log ist der Kanal fuer alles, was auch unbeaufsichtigt
 nachvollziehbar sein soll.
 
+Einfache Ein-Generationen-Rotation: ueberschreitet `version_puppy.log` 2 MB,
+wird sie nach `version_puppy.log.old` verschoben und neu begonnen - damit
+waechst sie bei einem dauerhaft laufenden Hintergrunddienst nicht
+unbegrenzt.
+
 ## Funktionsweise (Kurzfassung)
 
 - Ueberwacht konfigurierte Tool-Prozesse (aktuell: TIA Portal) per Polling.
