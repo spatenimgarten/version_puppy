@@ -1,4 +1,3 @@
-#requires -Version 5.1
 <#
 .SYNOPSIS
     Version_Puppy - Update
@@ -8,6 +7,13 @@
     Aenderungen neu. config.json ist nicht Teil des Downloads und bleibt
     unberuehrt. Kein Git auf der Zielmaschine noetig.
 #>
+
+if ($PSVersionTable.PSVersion -lt [Version]"5.1") {
+    # Laeuft per Scheduled Task ohne sichtbare Konsole - Log statt Popup,
+    # damit ein zu altes PowerShell nicht einfach still nichts tut.
+    Write-Host "PowerShell $($PSVersionTable.PSVersion) erkannt - Version_Puppy-Update braucht mindestens 5.1. WMF 5.1: https://www.microsoft.com/en-us/download/details.aspx?id=54616"
+    exit 1
+}
 
 $InstallDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SkriptPfad  = Join-Path $InstallDir "Version_Puppy.ps1"

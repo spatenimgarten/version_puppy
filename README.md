@@ -15,7 +15,12 @@ lokal mitgefuehrt), aber noch nicht implementiert.
 Datei auf die Zielmaschine zu kopieren:
 
 1. `install.ps1` z.B. nach `C:\Tools\Version_Puppy\install.ps1` kopieren.
-2. Ausfuehren (mind. PowerShell 5.1 erforderlich):
+2. Ausfuehren (mind. PowerShell 5.1 erforderlich - Windows 10/11 und
+   Server 2016+ haben das bereits eingebaut; auf Windows 7 SP1/8.1/
+   Server 2008 R2 SP1/2012/2012 R2 vorher [Windows Management Framework
+   5.1](https://www.microsoft.com/en-us/download/details.aspx?id=54616)
+   installieren, sonst meldet sich `install.ps1` mit dem Downloadlink und
+   bricht ab):
    ```
    powershell.exe -ExecutionPolicy Bypass -File "C:\Tools\Version_Puppy\install.ps1"
    ```

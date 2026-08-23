@@ -1,4 +1,3 @@
-#requires -Version 5.1
 <#
 .SYNOPSIS
     Version_Puppy - Installer
@@ -10,6 +9,14 @@
     stuendlichen Update-Check (Scheduled Task, laedt update.ps1) und bietet
     an, das Tool gleich zu starten.
 #>
+
+if ($PSVersionTable.PSVersion -lt [Version]"5.1") {
+    Write-Host "PowerShell $($PSVersionTable.PSVersion) erkannt - Version_Puppy braucht mindestens 5.1." -ForegroundColor Red
+    Write-Host "Windows Management Framework 5.1 herunterladen und installieren, danach Rechner neu starten:" -ForegroundColor Yellow
+    Write-Host "https://www.microsoft.com/en-us/download/details.aspx?id=54616" -ForegroundColor Yellow
+    Write-Host "(nur fuer Windows 7 SP1/8.1/Server 2008 R2 SP1/2012/2012 R2 - Windows 10/11 und Server 2016+ haben 5.1 bereits eingebaut.)"
+    exit 1
+}
 
 $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SkriptPfad = Join-Path $InstallDir "Version_Puppy.ps1"

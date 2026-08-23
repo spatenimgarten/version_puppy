@@ -1,4 +1,3 @@
-#requires -Version 5.1
 <#
 .SYNOPSIS
     Version_Puppy - Manager Stufe 1
@@ -19,7 +18,7 @@ Add-Type -AssemblyName System.Drawing
 $MinPSVersion = [Version]"5.1"
 if ($PSVersionTable.PSVersion -lt $MinPSVersion) {
     [System.Windows.Forms.MessageBox]::Show(
-        "PowerShell $($PSVersionTable.PSVersion) erkannt.`nDer Version_Puppy benoetigt mindestens PowerShell 5.1.`n`nBitte WMF 5.1 installieren (Windows Management Framework) und Rechner neu starten.",
+        "PowerShell $($PSVersionTable.PSVersion) erkannt.`nDer Version_Puppy benoetigt mindestens PowerShell 5.1.`n`nWindows Management Framework 5.1 herunterladen und installieren, danach Rechner neu starten:`nhttps://www.microsoft.com/en-us/download/details.aspx?id=54616`n(nur fuer Windows 7 SP1/8.1/Server 2008 R2 SP1/2012/2012 R2 - Windows 10/11 und Server 2016+ haben 5.1 bereits eingebaut.)",
         "Version zu alt",
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Warning
