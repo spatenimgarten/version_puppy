@@ -249,6 +249,47 @@ function Build-Versionsdateiname {
 # endregion
 
 # ============================================================
+# region Lokale Versionshistorie (Kommentar je Version, Vorstufe fuer die
+# geplante HTML-Historie aus Stufe 2)
+#
+#   Eine Datei pro Projekt im Zielpfad, ueber den Praefix vom Zielpfad
+#   anderer Projekte getrennt (gleiches Prinzip wie die Versionsnummern).
+# ============================================================
+
+function Get-VersionshistorieDatei {
+    param($Projekt, $GlobalConfig)
+    $praefix = Get-VersionsPraefix -Projekt $Projekt -GlobalConfig $GlobalConfig
+    Join-Path $Projekt.zielpfad "${praefix}historie.json"
+}
+
+function Add-VersionshistorieEintrag {
+    param($Projekt, $GlobalConfig, [string]$Dateiname, [string]$Typ, [string]$Kommentar)
+
+    $historieDatei = Get-VersionshistorieDatei -Projekt $Projekt -GlobalConfig $GlobalConfig
+    $eintraege = @()
+    if (Test-Path $historieDatei) {
+        try {
+            $eintraege = @(Get-Content -Path $historieDatei -Raw -Encoding UTF8 | ConvertFrom-Json)
+        } catch {
+            # Kaputte Historie nicht fortschreiben und damit staendig neue
+            # Fehler produzieren - lieber mit leerer Liste neu beginnen als
+            # den Watcher zu gefaehrden.
+            Write-Log "Versionshistorie '$historieDatei' nicht lesbar, beginne neu: $($_.Exception.Message)"
+            $eintraege = @()
+        }
+    }
+    $eintraege += [PSCustomObject]@{
+        dateiname  = $Dateiname
+        typ        = $Typ
+        erstelltAm = (Get-Date).ToString("s")
+        kommentar  = $Kommentar
+    }
+    $eintraege | ConvertTo-Json -Depth 10 | Set-Content -Path $historieDatei -Encoding UTF8
+}
+
+# endregion
+
+# ============================================================
 # region Version erstellen (ZIP, ohne Versionen-Unterordner selbst)
 # ============================================================
 
@@ -257,7 +298,8 @@ function New-ProjektVersion {
         $Projekt,
         $Config,
         [ValidateSet("Version", "Zwischenversion")]
-        [string]$Typ
+        [string]$Typ,
+        [string]$Kommentar = ""
     )
 
     Add-Type -AssemblyName System.IO.Compression
@@ -313,12 +355,22 @@ function New-ProjektVersion {
     $Projekt.letzteAenderung = (Get-Date).ToString("s")
     Write-Log "Version '$dateiname' fuer '$($Projekt.name)' erstellt."
 
+    try {
+        Add-VersionshistorieEintrag -Projekt $Projekt -GlobalConfig $Config.global -Dateiname $dateiname -Typ $Typ -Kommentar $Kommentar
+    } catch {
+        # Historie ist eine Zugabe, kein Kriterium fuer Erfolg/Misserfolg der
+        # Version selbst - Fehler hier loggen, aber die bereits erstellte
+        # Version nicht als fehlgeschlagen melden.
+        Write-Log "Versionshistorie fuer '$dateiname' konnte nicht geschrieben werden: $($_.Exception.Message)"
+    }
+
     # In Sync-Warteliste eintragen (Stufe 2 arbeitet diese ab)
     $Config.ausstehendeSyncs += [PSCustomObject]@{
         projektpfad = $Projekt.pfad
         zielpfad    = $Projekt.zielpfad
         serverpfad  = $Projekt.serverpfad
         dateiname   = $dateiname
+        kommentar   = $Kommentar
         erstelltAm  = (Get-Date).ToString("s")
         status      = "wartend"
     }
@@ -516,7 +568,7 @@ function Show-VersionPopup {
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Version_Puppy"
-    $form.Size = New-Object System.Drawing.Size(420, 240)
+    $form.Size = New-Object System.Drawing.Size(420, 270)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
@@ -578,37 +630,49 @@ function Show-VersionPopup {
         }
     })
 
+    $lblKommentar = New-Object System.Windows.Forms.Label
+    $lblKommentar.Text = "Kommentar (optional):"
+    $lblKommentar.Location = New-Object System.Drawing.Point(15, 70)
+    $lblKommentar.AutoSize = $true
+    $form.Controls.Add($lblKommentar)
+
+    $txtKommentar = New-Object System.Windows.Forms.TextBox
+    $txtKommentar.Location = New-Object System.Drawing.Point(15, 88)
+    $txtKommentar.Width = 385
+    $form.Controls.Add($txtKommentar)
+
     $script:popupAktion = $null
 
     $btnZwischen = New-Object System.Windows.Forms.Button
     $btnZwischen.Text = "Zwischenversion"
     $btnZwischen.Size = New-Object System.Drawing.Size(120, 30)
-    $btnZwischen.Location = New-Object System.Drawing.Point(15, 90)
+    $btnZwischen.Location = New-Object System.Drawing.Point(15, 120)
     $btnZwischen.Add_Click({ $script:popupAktion = "Zwischenversion"; $form.Close() })
     $form.Controls.Add($btnZwischen)
 
     $btnVersion = New-Object System.Windows.Forms.Button
     $btnVersion.Text = "Version"
     $btnVersion.Size = New-Object System.Drawing.Size(120, 30)
-    $btnVersion.Location = New-Object System.Drawing.Point(150, 90)
+    $btnVersion.Location = New-Object System.Drawing.Point(150, 120)
     $btnVersion.Add_Click({ $script:popupAktion = "Version"; $form.Close() })
     $form.Controls.Add($btnVersion)
 
     $btnBeenden = New-Object System.Windows.Forms.Button
     $btnBeenden.Text = "Beenden (keine Version)"
     $btnBeenden.Size = New-Object System.Drawing.Size(255, 30)
-    $btnBeenden.Location = New-Object System.Drawing.Point(15, 130)
+    $btnBeenden.Location = New-Object System.Drawing.Point(15, 160)
     $btnBeenden.Add_Click({ $script:popupAktion = "Beenden"; $form.Close() })
     $form.Controls.Add($btnBeenden)
 
     # Enter = sicherer Default (keine Version) - Zwischenversion/Version
-    # bleiben bewusst nur per expliziten Klick erreichbar.
+    # bleiben bewusst nur per expliziten Klick erreichbar. Gilt auch aus
+    # dem Kommentarfeld heraus (einzeiliges TextBox konsumiert Enter nicht).
     $form.AcceptButton = $btnBeenden
 
     $syncAnzahl = @($Config.ausstehendeSyncs).Count
     $lblSync = New-Object System.Windows.Forms.Label
     $lblSync.Text = "$syncAnzahl Version(en) warten auf Sync"
-    $lblSync.Location = New-Object System.Drawing.Point(15, 175)
+    $lblSync.Location = New-Object System.Drawing.Point(15, 205)
     $lblSync.AutoSize = $true
     $lblSync.ForeColor = [System.Drawing.Color]::Gray
     $form.Controls.Add($lblSync)
@@ -621,8 +685,8 @@ function Show-VersionPopup {
     $Config.global.letzteAuswahl = $ausgewaehltesProjekt.pfad
 
     switch ($script:popupAktion) {
-        "Version"         { New-ProjektVersion -Projekt $ausgewaehltesProjekt -Config $Config -Typ "Version" | Out-Null }
-        "Zwischenversion" { New-ProjektVersion -Projekt $ausgewaehltesProjekt -Config $Config -Typ "Zwischenversion" | Out-Null }
+        "Version"         { New-ProjektVersion -Projekt $ausgewaehltesProjekt -Config $Config -Typ "Version" -Kommentar $txtKommentar.Text | Out-Null }
+        "Zwischenversion" { New-ProjektVersion -Projekt $ausgewaehltesProjekt -Config $Config -Typ "Zwischenversion" -Kommentar $txtKommentar.Text | Out-Null }
         "Beenden"         { } # bewusst keine Aktion
     }
 

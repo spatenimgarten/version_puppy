@@ -58,6 +58,15 @@ dem Installationsablauf; danach nach Belieben.
 - [ ] In `config.json` bei einem Projekt das Feld `zielpfad` entfernen/leeren, dann "Version" klicken -> Fehlermeldung "Version konnte nicht erstellt werden: ...hat keinen Zielpfad hinterlegt", **kein Absturz**, Watcher laeuft danach normal weiter (naechster Popup-Trigger funktioniert noch).
 - [ ] In `config.json` bei einem Projekt das Feld `pfad` leeren, Watcher neu starten -> Eintrag wird beim Start als verwaist entfernt statt eines Absturzes.
 
+## 6b. Kommentar / lokale Versionshistorie
+
+- [ ] Kommentarfeld im Popup ausfuellen, "Version" klicken -> im Zielpfad liegt `{Nr}-{Werkzeug}-V{WVersion}-historie.json` mit einem Eintrag (Dateiname, Typ, Zeitstempel, genau der eingegebene Kommentar).
+- [ ] Kommentarfeld leer lassen, "Version" klicken -> funktioniert trotzdem (Pflichtfeld ist es nicht), Historie-Eintrag hat leeres `kommentar`-Feld.
+- [ ] Noch eine Version erstellen -> zweiter Eintrag kommt zur selben Historie-Datei dazu, erster bleibt erhalten (Array waechst, wird nicht ueberschrieben).
+- [ ] Zwischenversion mit Kommentar erstellen -> landet ebenfalls in der Historie, `typ` = "Zwischenversion".
+- [ ] `ausstehendeSyncs` in `config.json` pruefen -> der jeweilige Kommentar taucht dort ebenfalls im entsprechenden Eintrag auf.
+- [ ] Historie-Datei waehrend des Schreibens absichtlich mit kaputtem JSON ueberschreiben, dann eine weitere Version erstellen -> Historie beginnt sauber neu (kein Absturz, Log-Eintrag "nicht lesbar, beginne neu").
+
 ## 7. Verwaiste Projekte
 
 - [ ] Projektordner eines registrierten Projekts umbenennen/loeschen -> beim naechsten Reload-Zyklus verschwindet der Eintrag automatisch aus `config.json` (kein Fehler, keine Meldung).

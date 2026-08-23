@@ -103,7 +103,8 @@ unbegrenzt.
 
 - Ueberwacht konfigurierte Tool-Prozesse (aktuell: TIA Portal) per Polling.
 - Bei Prozessende: Popup mit Projektauswahl (Dropdown, letzte Auswahl
-  vorbelegt) und den Optionen Zwischenversion / Version / Beenden.
+  vorbelegt), optionalem Kommentarfeld und den Optionen Zwischenversion /
+  Version / Beenden.
 - Versionen werden als ZIP im projekteigenen Zielpfad abgelegt (frei
   aenderbar, Vorschlag beim Registrieren: `<Elternordner>\Versionen`, eine
   Ebene ueber dem Projektpfad), Benennung nach konfigurierbarem Schema.
@@ -118,6 +119,14 @@ unbegrenzt.
   noch nicht verwendet (Sync folgt erst in Stufe 2).
 - Verwaiste Projekteintraege (Pfad existiert nicht mehr) werden beim Start
   still bereinigt.
+- Jede erstellte Version (auch Zwischenversionen) landet zusaetzlich zum
+  ZIP als Eintrag (Dateiname, Typ, Zeitstempel, Kommentar) in einer
+  lokalen Versionshistorie `{Praefix}historie.json` im Zielpfad - eine
+  Datei je Projekt, ueber den Praefix vom Zielpfad anderer Projekte
+  getrennt. Der Kommentar wird auch in die Sync-Warteliste uebernommen.
+  Vorstufe fuer die geplante HTML-Historie aus Stufe 2, die diese Daten
+  serverseitig zusammenfuehren soll - in Stufe 1 nur lokale Rohdaten,
+  keine Aufbereitung.
 
 ## Konfiguration
 
