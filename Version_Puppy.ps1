@@ -574,6 +574,10 @@ function Show-VersionPopup {
     $btnBeenden.Add_Click({ $script:popupAktion = "Beenden"; $form.Close() })
     $form.Controls.Add($btnBeenden)
 
+    # Enter = sicherer Default (keine Version) - Zwischenversion/Version
+    # bleiben bewusst nur per expliziten Klick erreichbar.
+    $form.AcceptButton = $btnBeenden
+
     $syncAnzahl = @($Config.ausstehendeSyncs).Count
     $lblSync = New-Object System.Windows.Forms.Label
     $lblSync.Text = "$syncAnzahl Version(en) warten auf Sync"
