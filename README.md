@@ -82,6 +82,18 @@ Manuell anstossen: `powershell.exe -ExecutionPolicy Bypass -File
 Engineering-PCs), muss der Task manuell in der Aufgabenplanung angelegt
 werden (Trigger: taeglich wiederholen alle 1 Stunde, Aktion wie oben).
 
+## Logging
+
+`install.ps1`, `update.ps1` und `Version_Puppy.ps1` schreiben wichtige
+Ereignisse (Start, Fehler, erstellte Versionen, Updates) in eine gemeinsame
+`version_puppy.log` im Installationsordner - nicht versioniert, rein lokal.
+Wichtig vor allem fuer `update.ps1`: der laeuft per Scheduled Task komplett
+unsichtbar im Hintergrund, ohne die Log-Datei waere ein fehlgeschlagener
+Update-Check (z.B. Download-Fehler) von aussen nicht erkennbar. Popups
+(Fehlermeldungen, Versionierung) bleiben zusaetzlich bestehen, wo sie
+Sinn ergeben - das Log ist der Kanal fuer alles, was auch unbeaufsichtigt
+nachvollziehbar sein soll.
+
 ## Funktionsweise (Kurzfassung)
 
 - Ueberwacht konfigurierte Tool-Prozesse (aktuell: TIA Portal) per Polling.

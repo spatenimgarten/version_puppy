@@ -7,6 +7,9 @@ werkzeuge.json
 # Von TIA/Versionswaechter erzeugte Artefakte
 *.zip
 
+# Laufzeit-Log (install.ps1/update.ps1/Version_Puppy.ps1)
+version_puppy.log
+
 # Windows/Editor-Kram
 Thumbs.db
 *.swp

@@ -11,6 +11,7 @@ dem Installationsablauf; danach nach Belieben.
 - [ ] Meldung "Autostart eingerichtet" erscheint, Verknuepfung liegt in `shell:startup`.
 - [ ] Meldung "Automatischer Update-Check eingerichtet" erscheint, Task `Version_Puppy_Update` existiert in der Aufgabenplanung (stuendlich wiederholend).
 - [ ] Frage "Jetzt sofort starten?" mit `j` beantworten - Version_Puppy startet, kein sichtbares Konsolenfenster (nur ggf. Popups).
+- [ ] `install.ps1` ein zweites Mal ausfuehren, waehrend Version_Puppy noch laeuft -> Meldung "Version_Puppy laeuft bereits", **keine** zweite Instanz wird gestartet, keine Frage "Jetzt sofort starten?" erscheint.
 - [ ] `install.ps1` ein zweites Mal ausfuehren (idempotent) - keine Fehler, Verknuepfung/Task werden einfach neu angelegt.
 
 ## 2. Erststart / Konfigurationsdateien
@@ -54,6 +55,8 @@ dem Installationsablauf; danach nach Belieben.
 - [ ] Ein zweites Projekt registrieren, dessen Zielpfad mit dem ersten identisch ist -> Versionsnummern beider Projekte zaehlen unabhaengig (kein gegenseitiges Hochzaehlen).
 - [ ] Waehrend eine Projektdatei geoeffnet/gesperrt ist (z.B. in einem Editor offen halten), eine Version erstellen -> Fehlermeldung "Version konnte nicht erstellt werden", **kein Absturz**, keine kaputte ZIP bleibt liegen.
 - [ ] Nach erfolgreicher Version: Sync-Zaehler im Popup ("X Version(en) warten auf Sync") erhoeht sich.
+- [ ] In `config.json` bei einem Projekt das Feld `zielpfad` entfernen/leeren, dann "Version" klicken -> Fehlermeldung "Version konnte nicht erstellt werden: ...hat keinen Zielpfad hinterlegt", **kein Absturz**, Watcher laeuft danach normal weiter (naechster Popup-Trigger funktioniert noch).
+- [ ] In `config.json` bei einem Projekt das Feld `pfad` leeren, Watcher neu starten -> Eintrag wird beim Start als verwaist entfernt statt eines Absturzes.
 
 ## 7. Verwaiste Projekte
 
@@ -69,3 +72,11 @@ dem Installationsablauf; danach nach Belieben.
 ## 9. PowerShell-Versionscheck (nur falls relevant/testbare Umgebung vorhanden)
 
 - [ ] Auf einer Maschine mit PowerShell < 5.1 (falls verfuegbar): `install.ps1` bricht mit Fehlermeldung + WMF-5.1-Downloadlink ab, statt stumm nichts zu tun.
+
+## 10. Logging
+
+- [ ] `version_puppy.log` existiert im Installationsordner nach dem ersten Start.
+- [ ] Enthaelt Zeilen von `install.ps1`, `Version_Puppy.ps1` (mind. "Gestartet.") und nach einem Testlauf von `update.ps1`.
+- [ ] Nach einer erstellten Version steht eine entsprechende Zeile im Log (`Version '...' fuer '...' erstellt.`).
+- [ ] Download-Fehler in `update.ps1` erzwingen (z.B. kurz Netzwerk trennen) -> Fehlschlag steht im Log, nicht nur (nirgendwo sichtbar) in `Write-Host`.
+- [ ] `config.json`/`werkzeuge.json` waehrend eines kaputten Zwischenzustands (siehe Punkt 3) -> entsprechende Log-Zeile ("konnte nicht gelesen werden, behalte bisherigen Stand") erscheint.

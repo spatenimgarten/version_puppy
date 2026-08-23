@@ -29,6 +29,14 @@ if ($PSVersionTable.PSVersion -lt $MinPSVersion) {
 $InstallVerzeichnis = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPfad = Join-Path $InstallVerzeichnis "config.json"
 $WerkzeugePfad = Join-Path $InstallVerzeichnis "werkzeuge.json"
+$LogPfad = Join-Path $InstallVerzeichnis "version_puppy.log"
+
+function Write-Log {
+    param([string]$Nachricht)
+    try {
+        "$(Get-Date -Format 's') [Version_Puppy.ps1] $Nachricht" | Add-Content -Path $LogPfad -Encoding UTF8
+    } catch { }
+}
 
 # endregion
 
@@ -119,7 +127,10 @@ function Save-Werkzeuge {
 
 function Remove-VerwaisteProjekte {
     param($Config)
-    $Config.projekte = @($Config.projekte | Where-Object { Test-Path $_.pfad })
+    # "-and" kurzschliesst vor Test-Path - ein Projekt mit leerem/fehlendem
+    # pfad (z.B. durch manuelle Config-Bearbeitung) wirft dadurch keinen
+    # Fehler, sondern gilt konsequenterweise ebenfalls als verwaist.
+    $Config.projekte = @($Config.projekte | Where-Object { $_.pfad -and (Test-Path $_.pfad) })
     return $Config
 }
 
@@ -244,20 +255,26 @@ function New-ProjektVersion {
         [string]$Typ
     )
 
-    $versionenOrdner = $Projekt.zielpfad
-    if (-not (Test-Path $versionenOrdner)) {
-        New-Item -ItemType Directory -Path $versionenOrdner -Force | Out-Null
-    }
-
-    $praefix   = Get-VersionsPraefix -Projekt $Projekt -GlobalConfig $Config.global
-    $nummer    = Get-NaechsteVersionsnummer -VersionenOrdner $versionenOrdner -Praefix $praefix
-    $dateiname = Build-Versionsdateiname -Projekt $Projekt -GlobalConfig $Config.global -Nummer $nummer -Typ $Typ
-    $zielPfad  = Join-Path $versionenOrdner $dateiname
-
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+    $zielPfad = $null
     try {
+        $versionenOrdner = $Projekt.zielpfad
+        if ([string]::IsNullOrWhiteSpace($versionenOrdner)) {
+            # Kann bei Projekten aus einer aelteren Version ohne Zielpfad-Feld
+            # vorkommen - lieber sauber melden als mit Test-Path abstuerzen.
+            throw "Projekt '$($Projekt.name)' hat keinen Zielpfad hinterlegt."
+        }
+        if (-not (Test-Path $versionenOrdner)) {
+            New-Item -ItemType Directory -Path $versionenOrdner -Force | Out-Null
+        }
+
+        $praefix   = Get-VersionsPraefix -Projekt $Projekt -GlobalConfig $Config.global
+        $nummer    = Get-NaechsteVersionsnummer -VersionenOrdner $versionenOrdner -Praefix $praefix
+        $dateiname = Build-Versionsdateiname -Projekt $Projekt -GlobalConfig $Config.global -Nummer $nummer -Typ $Typ
+        $zielPfad  = Join-Path $versionenOrdner $dateiname
+
         $zip = [System.IO.Compression.ZipFile]::Open($zielPfad, [System.IO.Compression.ZipArchiveMode]::Create)
         try {
             $basisLaenge = $Projekt.pfad.TrimEnd('\').Length
@@ -271,11 +288,15 @@ function New-ProjektVersion {
             $zip.Dispose()
         }
     } catch {
-        # Zip evtl. nur teilweise geschrieben (z.B. Datei war noch gesperrt) -
-        # verwaiste/korrupte Zip nicht liegen lassen, Watcher darf nicht sterben.
-        Remove-Item -Path $zielPfad -Force -ErrorAction SilentlyContinue
+        # Zip evtl. nur teilweise geschrieben (z.B. Datei war noch gesperrt),
+        # oder Fehler schon davor (z.B. fehlender Zielpfad) - verwaiste/
+        # korrupte Zip nicht liegen lassen, Watcher darf nicht sterben.
+        if ($zielPfad) {
+            Remove-Item -Path $zielPfad -Force -ErrorAction SilentlyContinue
+        }
+        Write-Log "Version fuer '$($Projekt.name)' fehlgeschlagen: $($_.Exception.Message)"
         [System.Windows.Forms.MessageBox]::Show(
-            "Version konnte nicht erstellt werden (Datei evtl. noch gesperrt):`n$($_.Exception.Message)",
+            "Version konnte nicht erstellt werden:`n$($_.Exception.Message)",
             "Fehler bei Versionierung",
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
@@ -285,6 +306,7 @@ function New-ProjektVersion {
 
     $Projekt.letzteVersion   = $dateiname
     $Projekt.letzteAenderung = (Get-Date).ToString("s")
+    Write-Log "Version '$dateiname' fuer '$($Projekt.name)' erstellt."
 
     # In Sync-Warteliste eintragen (Stufe 2 arbeitet diese ab)
     $Config.ausstehendeSyncs += [PSCustomObject]@{
@@ -625,37 +647,49 @@ function Start-Watcher {
         Start-Sleep -Seconds 3
 
         try {
-            $Config = Load-Config
-        } catch {
-            # Transienter Lesefehler (z.B. config.json wird gerade von Hand
-            # gespeichert) - bisherigen Stand behalten, naechster Zyklus in
-            # 3s versucht es erneut, statt den Watcher zu beenden.
-            continue
-        }
-        $Config = Remove-VerwaisteProjekte -Config $Config
+            try {
+                $Config = Load-Config
+            } catch {
+                # Transienter Lesefehler (z.B. config.json wird gerade von
+                # Hand gespeichert) - bisherigen Stand behalten, naechster
+                # Zyklus in 3s versucht es erneut, statt den Watcher zu
+                # beenden.
+                Write-Log "config.json konnte nicht gelesen werden, behalte bisherigen Stand: $($_.Exception.Message)"
+                continue
+            }
+            $Config = Remove-VerwaisteProjekte -Config $Config
 
-        try {
-            $Werkzeuge = Load-Werkzeuge
-        } catch {
-            # Gleiches Prinzip fuer werkzeuge.json (z.B. gerade von Hand
-            # kopiert/bearbeitet) - bisherige Liste behalten.
-        }
-
-        foreach ($werkzeug in $Werkzeuge) {
-            $prozessBasisname = $werkzeug.prozessName -replace '\.exe$', ''
-            $laeuftJetzt = [bool](Get-Process -Name $prozessBasisname -ErrorAction SilentlyContinue)
-
-            if ($laufendVorher[$werkzeug.name] -eq $true -and $laeuftJetzt -eq $false) {
-                Show-VersionPopup -Config $Config -Werkzeuge $Werkzeuge
-                try {
-                    $Config = Load-Config
-                } catch {
-                    # Popup hat evtl. schon gespeichert - bei Lesefehler
-                    # direkt danach einfach beim vorherigen $Config bleiben.
-                }
+            try {
+                $Werkzeuge = Load-Werkzeuge
+            } catch {
+                # Gleiches Prinzip fuer werkzeuge.json (z.B. gerade von Hand
+                # kopiert/bearbeitet) - bisherige Liste behalten.
+                Write-Log "werkzeuge.json konnte nicht gelesen werden, behalte bisherige Liste: $($_.Exception.Message)"
             }
 
-            $laufendVorher[$werkzeug.name] = $laeuftJetzt
+            foreach ($werkzeug in $Werkzeuge) {
+                $prozessBasisname = $werkzeug.prozessName -replace '\.exe$', ''
+                $laeuftJetzt = [bool](Get-Process -Name $prozessBasisname -ErrorAction SilentlyContinue)
+
+                if ($laufendVorher[$werkzeug.name] -eq $true -and $laeuftJetzt -eq $false) {
+                    Show-VersionPopup -Config $Config -Werkzeuge $Werkzeuge
+                    try {
+                        $Config = Load-Config
+                    } catch {
+                        # Popup hat evtl. schon gespeichert - bei Lesefehler
+                        # direkt danach einfach beim vorherigen $Config bleiben.
+                        Write-Log "config.json nach Popup nicht lesbar, behalte bisherigen Stand: $($_.Exception.Message)"
+                    }
+                }
+
+                $laufendVorher[$werkzeug.name] = $laeuftJetzt
+            }
+        } catch {
+            # Letztes Sicherheitsnetz: irgendein unerwarteter Fehler in
+            # diesem Zyklus (z.B. kaputter Regex in werkzeuge.json, ein
+            # Projekt mit fehlendem Feld) darf den Watcher nicht toeten -
+            # loggen und mit dem naechsten Zyklus in 3s weitermachen.
+            Write-Log "Unerwarteter Fehler im Watcher-Zyklus, mache weiter: $($_.Exception.Message)"
         }
     }
 }
@@ -666,9 +700,12 @@ function Start-Watcher {
 # region Einstiegspunkt
 # ============================================================
 
+Write-Log "Gestartet."
+
 try {
     $Config = Load-Config
 } catch {
+    Write-Log "Fataler Fehler beim Start - config.json nicht lesbar: $($_.Exception.Message)"
     [System.Windows.Forms.MessageBox]::Show(
         "Konfigurationsdatei konnte nicht gelesen werden:`n$ConfigPfad`n`n$($_.Exception.Message)",
         "Fehler",
@@ -683,6 +720,7 @@ Save-Config -Config $Config
 try {
     $Werkzeuge = Load-Werkzeuge
 } catch {
+    Write-Log "Fataler Fehler beim Start - werkzeuge.json nicht lesbar: $($_.Exception.Message)"
     [System.Windows.Forms.MessageBox]::Show(
         "Werkzeugliste konnte nicht gelesen werden:`n$WerkzeugePfad`n`n$($_.Exception.Message)",
         "Fehler",
