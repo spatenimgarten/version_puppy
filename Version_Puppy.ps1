@@ -230,17 +230,30 @@ function New-ProjektVersion {
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-    $zip = [System.IO.Compression.ZipFile]::Open($zielPfad, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
-        $basisLaenge = $Projekt.pfad.TrimEnd('\').Length
-        Get-ChildItem -Path $Projekt.pfad -Recurse -File | Where-Object {
-            $_.FullName -notlike "$versionenOrdner*"
-        } | ForEach-Object {
-            $relativerPfad = $_.FullName.Substring($basisLaenge).TrimStart('\')
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $relativerPfad) | Out-Null
+        $zip = [System.IO.Compression.ZipFile]::Open($zielPfad, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            $basisLaenge = $Projekt.pfad.TrimEnd('\').Length
+            Get-ChildItem -Path $Projekt.pfad -Recurse -File | Where-Object {
+                $_.FullName -notlike "$versionenOrdner*"
+            } | ForEach-Object {
+                $relativerPfad = $_.FullName.Substring($basisLaenge).TrimStart('\')
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $relativerPfad) | Out-Null
+            }
+        } finally {
+            $zip.Dispose()
         }
-    } finally {
-        $zip.Dispose()
+    } catch {
+        # Zip evtl. nur teilweise geschrieben (z.B. Datei war noch gesperrt) -
+        # verwaiste/korrupte Zip nicht liegen lassen, Watcher darf nicht sterben.
+        Remove-Item -Path $zielPfad -Force -ErrorAction SilentlyContinue
+        [System.Windows.Forms.MessageBox]::Show(
+            "Version konnte nicht erstellt werden (Datei evtl. noch gesperrt):`n$($_.Exception.Message)",
+            "Fehler bei Versionierung",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+        return $null
     }
 
     $Projekt.letzteVersion   = $dateiname
