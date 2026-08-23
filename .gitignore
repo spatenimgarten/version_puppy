@@ -1,6 +1,9 @@
 # Lokal generierte, nutzer-/rechnerspezifische Konfiguration - nicht versionieren
 config.json
 
+# Werkzeug-Definitionen - rein lokal, bei Bedarf manuell zwischen Maschinen kopieren
+werkzeuge.json
+
 # Von TIA/Versionswaechter erzeugte Artefakte
 *.zip
 

@@ -28,11 +28,21 @@ if ($PSVersionTable.PSVersion -lt $MinPSVersion) {
 
 $InstallVerzeichnis = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPfad = Join-Path $InstallVerzeichnis "config.json"
+$WerkzeugePfad = Join-Path $InstallVerzeichnis "werkzeuge.json"
 
 # endregion
 
 # ============================================================
 # region Konfiguration: Laden / Speichern / Standardwerte
+#
+#   Zwei getrennte Dateien, bewusst beide nicht versioniert (siehe
+#   .gitignore) und rein lokal:
+#   - config.json     - Projekte, Sync-Warteliste, Kuerzel/Trennzeichen -
+#                        maschinenspezifischer Laufzeitstand.
+#   - werkzeuge.json  - Tool-Definitionen (Prozessname, Dateimuster) -
+#                        aendert sich selten, laesst sich bei Bedarf einfach
+#                        auf andere Maschinen kopieren, ohne Projektdaten
+#                        mitzuschleppen.
 # ============================================================
 
 function Get-StandardConfig {
@@ -41,50 +51,64 @@ function Get-StandardConfig {
             kuerzel       = ""
             trennzeichen  = "-"
             letzteAuswahl = ""
-            werkzeuge     = @(
-                [PSCustomObject]@{
-                    name               = "TIA"
-                    prozessName        = "Siemens.Automation.Portal.exe"
-                    erweiterungsMuster = "^ap(\d+)$"
-                }
-            )
         }
         projekte         = @()
         ausstehendeSyncs = @()
     }
 }
 
+function Get-StandardWerkzeuge {
+    @(
+        [PSCustomObject]@{
+            name               = "TIA"
+            prozessName        = "Siemens.Automation.Portal.exe"
+            erweiterungsMuster = "^ap(\d+)$"
+        }
+    )
+}
+
 function Load-Config {
+    # Wirft bei kaputtem/nicht lesbarem JSON bewusst einen normalen Fehler
+    # (statt hier selbst abzubrechen) - der Aufrufer entscheidet, ob das
+    # fatal ist (Erststart) oder nur dieser Zyklus uebersprungen wird
+    # (periodisches Neuladen im Watcher, z.B. waehrend config.json von
+    # Hand gespeichert wird).
     if (-not (Test-Path $ConfigPfad)) {
         $config = Get-StandardConfig
         Save-Config -Config $config
         return $config
     }
-    try {
-        $inhalt = Get-Content -Path $ConfigPfad -Raw -Encoding UTF8
-        $config = $inhalt | ConvertFrom-Json
+    $inhalt = Get-Content -Path $ConfigPfad -Raw -Encoding UTF8
+    $config = $inhalt | ConvertFrom-Json
 
-        # Einzelne Objekte aus JSON koennen beim Parsen als Skalar statt
-        # Array zurueckkommen (z.B. genau 1 Projekt) - hier absichern.
-        $config.projekte         = @($config.projekte)
-        $config.ausstehendeSyncs = @($config.ausstehendeSyncs)
-        $config.global.werkzeuge = @($config.global.werkzeuge)
+    # Einzelne Objekte aus JSON koennen beim Parsen als Skalar statt
+    # Array zurueckkommen (z.B. genau 1 Projekt) - hier absichern.
+    $config.projekte         = @($config.projekte)
+    $config.ausstehendeSyncs = @($config.ausstehendeSyncs)
 
-        return $config
-    } catch {
-        [System.Windows.Forms.MessageBox]::Show(
-            "Konfigurationsdatei konnte nicht gelesen werden:`n$ConfigPfad`n`n$($_.Exception.Message)",
-            "Fehler",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        exit 1
-    }
+    return $config
 }
 
 function Save-Config {
     param($Config)
     $Config | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigPfad -Encoding UTF8
+}
+
+function Load-Werkzeuge {
+    # Gleiches Prinzip wie Load-Config: wirft bei kaputtem JSON, Aufrufer
+    # entscheidet ueber fatal vs. Zyklus ueberspringen.
+    if (-not (Test-Path $WerkzeugePfad)) {
+        $werkzeuge = Get-StandardWerkzeuge
+        Save-Werkzeuge -Werkzeuge $werkzeuge
+        return $werkzeuge
+    }
+    $inhalt = Get-Content -Path $WerkzeugePfad -Raw -Encoding UTF8
+    @($inhalt | ConvertFrom-Json)
+}
+
+function Save-Werkzeuge {
+    param($Werkzeuge)
+    $Werkzeuge | ConvertTo-Json -Depth 10 | Set-Content -Path $WerkzeugePfad -Encoding UTF8
 }
 
 # endregion
@@ -119,7 +143,7 @@ function Get-ProjektnummerAusOrdner {
 function Get-ProjektKandidaten {
     param(
         [string]$Ordnerpfad,
-        $Config
+        $Werkzeuge
     )
 
     $kandidaten = @()
@@ -127,7 +151,7 @@ function Get-ProjektKandidaten {
 
     foreach ($datei in $dateien) {
         $erweiterung = $datei.Extension.TrimStart('.')
-        foreach ($werkzeug in $Config.global.werkzeuge) {
+        foreach ($werkzeug in $Werkzeuge) {
             if ($erweiterung -match $werkzeug.erweiterungsMuster) {
                 $kandidaten += [PSCustomObject]@{
                     dateiname       = $datei.Name
@@ -461,7 +485,7 @@ function Show-NeuesProjektFenster {
 # ============================================================
 
 function Show-VersionPopup {
-    param($Config)
+    param($Config, $Werkzeuge)
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Version_Puppy"
@@ -516,7 +540,7 @@ function Show-VersionPopup {
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
         $dialog.Description = "Projektordner auswaehlen"
         if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-            $kandidaten = Get-ProjektKandidaten -Ordnerpfad $dialog.SelectedPath -Config $Config
+            $kandidaten = Get-ProjektKandidaten -Ordnerpfad $dialog.SelectedPath -Werkzeuge $Werkzeuge
             $neuesProjekt = Show-NeuesProjektFenster -Ordnerpfad $dialog.SelectedPath -Kandidaten $kandidaten
             if ($neuesProjekt) {
                 $Config.projekte += $neuesProjekt
@@ -585,10 +609,10 @@ function Show-VersionPopup {
 # ============================================================
 
 function Start-Watcher {
-    param($Config)
+    param($Config, $Werkzeuge)
 
     $laufendVorher = @{}
-    foreach ($werkzeug in $Config.global.werkzeuge) {
+    foreach ($werkzeug in $Werkzeuge) {
         $prozessBasisname = $werkzeug.prozessName -replace '\.exe$', ''
         $laufendVorher[$werkzeug.name] = [bool](Get-Process -Name $prozessBasisname -ErrorAction SilentlyContinue)
     }
@@ -596,16 +620,35 @@ function Start-Watcher {
     while ($true) {
         Start-Sleep -Seconds 3
 
-        $Config = Load-Config
+        try {
+            $Config = Load-Config
+        } catch {
+            # Transienter Lesefehler (z.B. config.json wird gerade von Hand
+            # gespeichert) - bisherigen Stand behalten, naechster Zyklus in
+            # 3s versucht es erneut, statt den Watcher zu beenden.
+            continue
+        }
         $Config = Remove-VerwaisteProjekte -Config $Config
 
-        foreach ($werkzeug in $Config.global.werkzeuge) {
+        try {
+            $Werkzeuge = Load-Werkzeuge
+        } catch {
+            # Gleiches Prinzip fuer werkzeuge.json (z.B. gerade von Hand
+            # kopiert/bearbeitet) - bisherige Liste behalten.
+        }
+
+        foreach ($werkzeug in $Werkzeuge) {
             $prozessBasisname = $werkzeug.prozessName -replace '\.exe$', ''
             $laeuftJetzt = [bool](Get-Process -Name $prozessBasisname -ErrorAction SilentlyContinue)
 
             if ($laufendVorher[$werkzeug.name] -eq $true -and $laeuftJetzt -eq $false) {
-                Show-VersionPopup -Config $Config
-                $Config = Load-Config
+                Show-VersionPopup -Config $Config -Werkzeuge $Werkzeuge
+                try {
+                    $Config = Load-Config
+                } catch {
+                    # Popup hat evtl. schon gespeichert - bei Lesefehler
+                    # direkt danach einfach beim vorherigen $Config bleiben.
+                }
             }
 
             $laufendVorher[$werkzeug.name] = $laeuftJetzt
@@ -619,10 +662,32 @@ function Start-Watcher {
 # region Einstiegspunkt
 # ============================================================
 
-$Config = Load-Config
+try {
+    $Config = Load-Config
+} catch {
+    [System.Windows.Forms.MessageBox]::Show(
+        "Konfigurationsdatei konnte nicht gelesen werden:`n$ConfigPfad`n`n$($_.Exception.Message)",
+        "Fehler",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Error
+    ) | Out-Null
+    exit 1
+}
 $Config = Remove-VerwaisteProjekte -Config $Config
 Save-Config -Config $Config
 
-Start-Watcher -Config $Config
+try {
+    $Werkzeuge = Load-Werkzeuge
+} catch {
+    [System.Windows.Forms.MessageBox]::Show(
+        "Werkzeugliste konnte nicht gelesen werden:`n$WerkzeugePfad`n`n$($_.Exception.Message)",
+        "Fehler",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Error
+    ) | Out-Null
+    exit 1
+}
+
+Start-Watcher -Config $Config -Werkzeuge $Werkzeuge
 
 # endregion

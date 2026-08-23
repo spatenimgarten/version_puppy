@@ -27,9 +27,10 @@ Datei auf die Zielmaschine zu kopieren:
    Laedt `Version_Puppy.ps1` und `update.ps1` automatisch von GitHub nach
    (main-Branch), richtet Autostart und stuendlichen Update-Check ein
    (siehe naechster Abschnitt) und bietet an, gleich zu starten.
-3. Beim ersten Start von Version_Puppy wird `config.json` automatisch mit
-   Standardwerten angelegt. `kuerzel` und ggf. weitere `werkzeuge`-Eintraege
-   danach von Hand nachtragen.
+3. Beim ersten Start von Version_Puppy werden `config.json` und
+   `werkzeuge.json` automatisch mit Standardwerten angelegt. `kuerzel` in
+   `config.json` danach von Hand nachtragen, in `werkzeuge.json` bei Bedarf
+   weitere Tool-Eintraege (siehe naechster Abschnitt).
 
 Danach sorgt der Update-Task dafuer, dass neue Versionen automatisch
 ankommen - kein erneutes manuelles Kopieren noetig.
@@ -70,8 +71,8 @@ im Hintergrund laufen lassen.
 Task (`Version_Puppy_Update`) ein, der `update.ps1` ausfuehrt. Der laedt
 den aktuellen `main`-Branch als ZIP von GitHub (kein Git auf der
 Zielmaschine noetig), vergleicht die Dateien per Hash und ersetzt nur, was
-sich geaendert hat. `config.json` ist nicht Teil des Repos und bleibt
-unberuehrt. Gab es eine Aenderung, wird der laufende Version_Puppy-Prozess
+sich geaendert hat. `config.json` und `werkzeuge.json` sind nicht Teil des
+Repos und bleiben unberuehrt. Gab es eine Aenderung, wird der laufende Version_Puppy-Prozess
 beendet und mit dem neuen Stand neu gestartet - laufende Ueberwachung geht
 dabei kurz aus, ein evtl. offenes Versions-Popup wuerde mitbeendet.
 
@@ -101,10 +102,32 @@ werden (Trigger: taeglich wiederholen alle 1 Stunde, Aktion wie oben).
 - Verwaiste Projekteintraege (Pfad existiert nicht mehr) werden beim Start
   still bereinigt.
 
-## Konfiguration (`config.json`)
+## Konfiguration
 
-Wird nicht versioniert (siehe `.gitignore`), da rechner-/nutzerspezifisch
-(Kuerzel, Trennzeichen, bekannte Projekte, ausstehende Syncs).
+Zwei getrennte Dateien, beide nicht versioniert (siehe `.gitignore`) und
+rein lokal - der Watcher laedt beide alle 3 Sekunden neu, Aenderungen
+wirken also ohne Neustart:
+
+- **`config.json`** - maschinenspezifischer Laufzeitstand: Kuerzel,
+  Trennzeichen, bekannte Projekte, ausstehende Syncs. Aendert sich staendig,
+  bleibt pro Maschine.
+- **`werkzeuge.json`** - Tool-Definitionen (Name, Prozessname, Datei-
+  Erweiterungsmuster). Aendert sich selten und laesst sich bei Bedarf
+  einfach auf andere Maschinen kopieren, ohne Projektdaten mitzuschleppen:
+  ```json
+  [
+      {
+          "name": "TIA",
+          "prozessName": "Siemens.Automation.Portal.exe",
+          "erweiterungsMuster": "^ap(\\d+)$"
+      }
+  ]
+  ```
+  Ein Eintrag fuer ein auf der jeweiligen Maschine nicht installiertes
+  Werkzeug ist unproblematisch - `Get-Process` liefert dafuer einfach nie
+  einen Treffer, kein Fehler, kein spuerbarer Overhead. Eine gemeinsame
+  Werkzeugliste ueber mehrere Maschinen hinweg ist also unbedenklich, auch
+  wenn nicht jede Maschine jedes Tool installiert hat.
 
 ## Naechste Schritte
 
