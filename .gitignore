@@ -1,0 +1,9 @@
+# Lokal generierte, nutzer-/rechnerspezifische Konfiguration - nicht versionieren
+config.json
+
+# Von TIA/Versionswaechter erzeugte Artefakte
+*.zip
+
+# Windows/Editor-Kram
+Thumbs.db
+*.swp
