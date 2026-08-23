@@ -43,8 +43,18 @@ try {
     exit 1
 }
 
-if (Test-Path $TempExtract) { Remove-Item $TempExtract -Recurse -Force }
-Expand-Archive -Path $TempZip -DestinationPath $TempExtract -Force
+try {
+    if (Test-Path $TempExtract) { Remove-Item $TempExtract -Recurse -Force }
+    Expand-Archive -Path $TempZip -DestinationPath $TempExtract -Force
+} catch {
+    # z.B. korruptes ZIP oder ein Eintrag, den Expand-Archive wegen eines
+    # Pfad-Traversal-Versuchs (Zip Slip) ablehnt - nicht unbeaufsichtigt
+    # abbrechen, sondern wie den Download-Fehler oben behandeln.
+    Write-Host "Update fehlgeschlagen (Entpacken): $($_.Exception.Message)" -ForegroundColor Red
+    Write-Log "Update fehlgeschlagen (Entpacken): $($_.Exception.Message)"
+    Remove-Item $TempZip -Force -ErrorAction SilentlyContinue
+    exit 1
+}
 Remove-Item $TempZip -Force
 
 $QuellOrdner = Get-ChildItem -Path $TempExtract -Directory | Select-Object -First 1

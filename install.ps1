@@ -48,8 +48,17 @@ if (-not (Test-Path $SkriptPfad)) {
         Write-Log "Download fehlgeschlagen: $($_.Exception.Message)"
         exit 1
     }
-    if (Test-Path $TempExtract) { Remove-Item $TempExtract -Recurse -Force }
-    Expand-Archive -Path $TempZip -DestinationPath $TempExtract -Force
+    try {
+        if (Test-Path $TempExtract) { Remove-Item $TempExtract -Recurse -Force }
+        Expand-Archive -Path $TempZip -DestinationPath $TempExtract -Force
+    } catch {
+        # z.B. korruptes ZIP oder ein Eintrag, den Expand-Archive wegen
+        # eines Pfad-Traversal-Versuchs (Zip Slip) ablehnt.
+        Write-Host "Entpacken fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Entpacken fehlgeschlagen: $($_.Exception.Message)"
+        Remove-Item $TempZip -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
     Remove-Item $TempZip -Force
     $QuellOrdner = Get-ChildItem -Path $TempExtract -Directory | Select-Object -First 1
     Get-ChildItem -Path $QuellOrdner.FullName -File | Where-Object { $_.Name -ne "config.json" } | ForEach-Object {
