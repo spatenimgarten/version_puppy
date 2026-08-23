@@ -1,6 +1,10 @@
 # Lokal generierte, nutzer-/rechnerspezifische Konfiguration - nicht versionieren
 config.json
 
+# Warteliste erstellter Versionen, die noch nicht synchronisiert wurden -
+# rein lokal, Stufe 2 arbeitet sie ab
+sync.json
+
 # Werkzeug-Definitionen - rein lokal, bei Bedarf manuell zwischen Maschinen kopieren
 werkzeuge.json
 

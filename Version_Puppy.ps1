@@ -29,6 +29,7 @@ if ($PSVersionTable.PSVersion -lt $MinPSVersion) {
 $InstallVerzeichnis = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPfad = Join-Path $InstallVerzeichnis "config.json"
 $WerkzeugePfad = Join-Path $InstallVerzeichnis "werkzeuge.json"
+$SyncPfad = Join-Path $InstallVerzeichnis "sync.json"
 $LogPfad = Join-Path $InstallVerzeichnis "version_puppy.log"
 
 function Write-Log {
@@ -43,19 +44,42 @@ function Write-Log {
     } catch { }
 }
 
+function Set-JsonAtomar {
+    # Schreibt zuerst in eine Temp-Datei und ersetzt das Ziel dann atomar -
+    # verhindert eine abgeschnittene/kaputte JSON-Datei, falls der Prozess
+    # exakt waehrend des Schreibens beendet wird (z.B. update.ps1s
+    # Stop-Process -Force). [System.IO.File]::Replace() statt Move-Item
+    # -Force, da Move-Item -Force bei existierendem Ziel unter Windows
+    # PowerShell 5.1 nicht garantiert atomar ist.
+    param([string]$Pfad, $Objekt)
+    $tempPfad = "$Pfad.tmp"
+    $Objekt | ConvertTo-Json -Depth 10 | Set-Content -Path $tempPfad -Encoding UTF8
+    if (Test-Path $Pfad) {
+        [System.IO.File]::Replace($tempPfad, $Pfad, $null)
+    } else {
+        Move-Item -Path $tempPfad -Destination $Pfad
+    }
+}
+
 # endregion
 
 # ============================================================
 # region Konfiguration: Laden / Speichern / Standardwerte
 #
-#   Zwei getrennte Dateien, bewusst beide nicht versioniert (siehe
+#   Drei getrennte Dateien, bewusst alle nicht versioniert (siehe
 #   .gitignore) und rein lokal:
-#   - config.json     - Projekte, Sync-Warteliste, Kuerzel/Trennzeichen -
-#                        maschinenspezifischer Laufzeitstand.
+#   - config.json     - Projekte, Kuerzel/Trennzeichen - maschinen-
+#                        spezifischer Laufzeitstand.
 #   - werkzeuge.json  - Tool-Definitionen (Prozessname, Dateimuster) -
 #                        aendert sich selten, laesst sich bei Bedarf einfach
 #                        auf andere Maschinen kopieren, ohne Projektdaten
 #                        mitzuschleppen.
+#   - sync.json       - Warteliste erstellter Versionen, die noch nicht
+#                        auf den Serverpfad synchronisiert wurden. Bewusst
+#                        von config.json getrennt, damit Stufe 2 sie als
+#                        eigenstaendige Abarbeitungs-Warteschlange lesen/
+#                        leeren kann, ohne mit dem Live-Projektstand zu
+#                        kollidieren.
 # ============================================================
 
 function Get-StandardConfig {
@@ -65,8 +89,7 @@ function Get-StandardConfig {
             trennzeichen  = "-"
             letzteAuswahl = ""
         }
-        projekte         = @()
-        ausstehendeSyncs = @()
+        projekte = @()
     }
 }
 
@@ -96,15 +119,14 @@ function Load-Config {
 
     # Einzelne Objekte aus JSON koennen beim Parsen als Skalar statt
     # Array zurueckkommen (z.B. genau 1 Projekt) - hier absichern.
-    $config.projekte         = @($config.projekte)
-    $config.ausstehendeSyncs = @($config.ausstehendeSyncs)
+    $config.projekte = @($config.projekte)
 
     return $config
 }
 
 function Save-Config {
     param($Config)
-    $Config | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigPfad -Encoding UTF8
+    Set-JsonAtomar -Pfad $ConfigPfad -Objekt $Config
 }
 
 function Load-Werkzeuge {
@@ -121,7 +143,23 @@ function Load-Werkzeuge {
 
 function Save-Werkzeuge {
     param($Werkzeuge)
-    $Werkzeuge | ConvertTo-Json -Depth 10 | Set-Content -Path $WerkzeugePfad -Encoding UTF8
+    Set-JsonAtomar -Pfad $WerkzeugePfad -Objekt $Werkzeuge
+}
+
+function Load-Sync {
+    # Gleiches Prinzip wie Load-Config/Load-Werkzeuge: wirft bei kaputtem
+    # JSON, Aufrufer entscheidet ueber Fallback.
+    if (-not (Test-Path $SyncPfad)) {
+        Save-Sync -Sync @()
+        return @()
+    }
+    $inhalt = Get-Content -Path $SyncPfad -Raw -Encoding UTF8
+    @($inhalt | ConvertFrom-Json)
+}
+
+function Save-Sync {
+    param($Sync)
+    Set-JsonAtomar -Pfad $SyncPfad -Objekt $Sync
 }
 
 # endregion
@@ -284,7 +322,7 @@ function Add-VersionshistorieEintrag {
         erstelltAm = (Get-Date).ToString("s")
         kommentar  = $Kommentar
     }
-    $eintraege | ConvertTo-Json -Depth 10 | Set-Content -Path $historieDatei -Encoding UTF8
+    Set-JsonAtomar -Pfad $historieDatei -Objekt $eintraege
 }
 
 # endregion
@@ -364,15 +402,23 @@ function New-ProjektVersion {
         Write-Log "Versionshistorie fuer '$dateiname' konnte nicht geschrieben werden: $($_.Exception.Message)"
     }
 
-    # In Sync-Warteliste eintragen (Stufe 2 arbeitet diese ab)
-    $Config.ausstehendeSyncs += [PSCustomObject]@{
-        projektpfad = $Projekt.pfad
-        zielpfad    = $Projekt.zielpfad
-        serverpfad  = $Projekt.serverpfad
-        dateiname   = $dateiname
-        kommentar   = $Kommentar
-        erstelltAm  = (Get-Date).ToString("s")
-        status      = "wartend"
+    # In sync.json eintragen (Stufe 2 arbeitet diese eigenstaendige
+    # Warteschlange ab) - eigener try/catch wie bei der Historie, ein
+    # Sync-Eintrag ist kein Kriterium fuer den Erfolg der Version selbst.
+    try {
+        $sync = Load-Sync
+        $sync += [PSCustomObject]@{
+            projektpfad = $Projekt.pfad
+            zielpfad    = $Projekt.zielpfad
+            serverpfad  = $Projekt.serverpfad
+            dateiname   = $dateiname
+            kommentar   = $Kommentar
+            erstelltAm  = (Get-Date).ToString("s")
+            status      = "wartend"
+        }
+        Save-Sync -Sync $sync
+    } catch {
+        Write-Log "Sync-Eintrag fuer '$dateiname' konnte nicht gespeichert werden: $($_.Exception.Message)"
     }
 
     return $dateiname
@@ -669,7 +715,11 @@ function Show-VersionPopup {
     # dem Kommentarfeld heraus (einzeiliges TextBox konsumiert Enter nicht).
     $form.AcceptButton = $btnBeenden
 
-    $syncAnzahl = @($Config.ausstehendeSyncs).Count
+    try {
+        $syncAnzahl = @(Load-Sync).Count
+    } catch {
+        $syncAnzahl = "?"
+    }
     $lblSync = New-Object System.Windows.Forms.Label
     $lblSync.Text = "$syncAnzahl Version(en) warten auf Sync"
     $lblSync.Location = New-Object System.Drawing.Point(15, 205)

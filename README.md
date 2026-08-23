@@ -123,20 +123,32 @@ unbegrenzt.
   ZIP als Eintrag (Dateiname, Typ, Zeitstempel, Kommentar) in einer
   lokalen Versionshistorie `{Praefix}historie.json` im Zielpfad - eine
   Datei je Projekt, ueber den Praefix vom Zielpfad anderer Projekte
-  getrennt. Der Kommentar wird auch in die Sync-Warteliste uebernommen.
-  Vorstufe fuer die geplante HTML-Historie aus Stufe 2, die diese Daten
-  serverseitig zusammenfuehren soll - in Stufe 1 nur lokale Rohdaten,
-  keine Aufbereitung.
+  getrennt. Der Kommentar wird auch in den `sync.json`-Eintrag
+  uebernommen. Vorstufe fuer die geplante HTML-Historie aus Stufe 2, die
+  diese Daten serverseitig zusammenfuehren soll - in Stufe 1 nur lokale
+  Rohdaten, keine Aufbereitung.
 
 ## Konfiguration
 
-Zwei getrennte Dateien, beide nicht versioniert (siehe `.gitignore`) und
-rein lokal - der Watcher laedt beide alle 3 Sekunden neu, Aenderungen
-wirken also ohne Neustart:
+Drei getrennte Dateien, alle nicht versioniert (siehe `.gitignore`) und
+rein lokal - Aenderungen wirken ohne Neustart, da nichts dauerhaft im
+Speicher gehalten wird: `config.json`/`werkzeuge.json` laedt der Watcher
+alle 3 Sekunden neu, `sync.json` wird direkt bei jedem Zugriff (neue
+Version, Popup-Anzeige) frisch gelesen bzw. geschrieben. Geschrieben wird
+immer atomar (Temp-Datei + `[System.IO.File]::Replace()`) - eine kaputte/
+abgeschnittene JSON-Datei durch einen Prozessabbruch mitten im Schreiben
+(z.B. update.ps1s `Stop-Process -Force`) ist damit ausgeschlossen.
 
 - **`config.json`** - maschinenspezifischer Laufzeitstand: Kuerzel,
-  Trennzeichen, bekannte Projekte, ausstehende Syncs. Aendert sich staendig,
-  bleibt pro Maschine.
+  Trennzeichen, bekannte Projekte. Aendert sich staendig, bleibt pro
+  Maschine.
+- **`sync.json`** - Warteliste erstellter Versionen, die noch nicht auf
+  den jeweiligen Serverpfad synchronisiert wurden (Dateiname, Kommentar,
+  Zeitstempel, Status). Bewusst von `config.json` getrennt, damit Stufe 2
+  sie als eigenstaendige Abarbeitungs-Warteschlange lesen und leeren kann,
+  ohne mit dem Live-Projektstand zu kollidieren. Noch nicht funktional
+  genutzt (Sync folgt erst in Stufe 2), wird aber schon bei jeder Version
+  befuellt.
 - **`werkzeuge.json`** - Tool-Definitionen (Name, Prozessname, Datei-
   Erweiterungsmuster). Aendert sich selten und laesst sich bei Bedarf
   einfach auf andere Maschinen kopieren, ohne Projektdaten mitzuschleppen:

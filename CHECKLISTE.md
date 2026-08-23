@@ -18,6 +18,7 @@ dem Installationsablauf; danach nach Belieben.
 
 - [ ] `config.json` wurde automatisch mit Standardwerten angelegt.
 - [ ] `werkzeuge.json` wurde automatisch mit Standardwerten angelegt (Eintrag `TIA`).
+- [ ] `sync.json` existiert **nicht** direkt nach dem Erststart (wird erst beim ersten Oeffnen des Versions-Popups angelegt, da der Sync-Zaehler sie liest), dann mit leerem Array `[]`.
 
 ## 3. Live-Bearbeitung waehrend Version_Puppy laeuft
 
@@ -64,7 +65,7 @@ dem Installationsablauf; danach nach Belieben.
 - [ ] Kommentarfeld leer lassen, "Version" klicken -> funktioniert trotzdem (Pflichtfeld ist es nicht), Historie-Eintrag hat leeres `kommentar`-Feld.
 - [ ] Noch eine Version erstellen -> zweiter Eintrag kommt zur selben Historie-Datei dazu, erster bleibt erhalten (Array waechst, wird nicht ueberschrieben).
 - [ ] Zwischenversion mit Kommentar erstellen -> landet ebenfalls in der Historie, `typ` = "Zwischenversion".
-- [ ] `ausstehendeSyncs` in `config.json` pruefen -> der jeweilige Kommentar taucht dort ebenfalls im entsprechenden Eintrag auf.
+- [ ] `sync.json` pruefen -> der jeweilige Kommentar taucht dort ebenfalls im entsprechenden Eintrag auf, unabhaengig von `config.json`.
 - [ ] Historie-Datei waehrend des Schreibens absichtlich mit kaputtem JSON ueberschreiben, dann eine weitere Version erstellen -> Historie beginnt sauber neu (kein Absturz, Log-Eintrag "nicht lesbar, beginne neu").
 
 ## 7. Verwaiste Projekte
