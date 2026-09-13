@@ -827,6 +827,32 @@ function New-ProjektVersion {
 # endregion
 
 # ============================================================
+# region GUI: Ordnerauswahl mit Adressleiste
+#
+#   Das klassische FolderBrowserDialog-Baumfenster hat unter .NET
+#   Framework/WinForms 5.1 keine Adressleiste - ein Pfad (z.B. ein
+#   UNC-Serverpfad) laesst sich nicht reinkopieren, nur durchklicken.
+#   OpenFileDialog mit deaktivierter Datei-Existenzpruefung zeigt
+#   stattdessen den modernen Explorer-Dialog samt Adressleiste; man
+#   navigiert zum gewuenschten Ordner und bestaetigt (der eingetragene
+#   Dateiname wird ignoriert, nur der Elternordner zaehlt).
+# ============================================================
+
+function Show-OrdnerAuswahlDialog {
+    param([string]$Titel)
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = $Titel
+    $dlg.ValidateNames = $false
+    $dlg.CheckFileExists = $false
+    $dlg.CheckPathExists = $true
+    $dlg.FileName = "Ordner auswaehlen"
+    if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
+    Split-Path -Parent $dlg.FileName
+}
+
+# endregion
+
+# ============================================================
 # region GUI: Neues Projekt registrieren
 # ============================================================
 
@@ -922,11 +948,8 @@ function Show-NeuesProjektFenster {
     $btnZielDurchsuchen.Location = New-Object System.Drawing.Point(325, ($y - 4))
     $btnZielDurchsuchen.Width = 30
     $btnZielDurchsuchen.Add_Click({
-        $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-        $dlg.Description = "Zielordner fuer Versionen auswaehlen"
-        if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-            $txtZiel.Text = $dlg.SelectedPath
-        }
+        $gewaehlt = Show-OrdnerAuswahlDialog -Titel "Zielordner fuer Versionen auswaehlen"
+        if ($gewaehlt) { $txtZiel.Text = $gewaehlt }
     })
     $form.Controls.Add($btnZielDurchsuchen)
     $y += 30
@@ -939,8 +962,21 @@ function Show-NeuesProjektFenster {
     $txtServer = New-Object System.Windows.Forms.TextBox
     $txtServer.Text = ""
     $txtServer.Location = New-Object System.Drawing.Point(150, ($y - 3))
-    $txtServer.Width = 235
+    $txtServer.Width = 170
     $form.Controls.Add($txtServer)
+    $btnServerDurchsuchen = New-Object System.Windows.Forms.Button
+    $btnServerDurchsuchen.Text = "..."
+    $btnServerDurchsuchen.Location = New-Object System.Drawing.Point(325, ($y - 4))
+    $btnServerDurchsuchen.Width = 30
+    $btnServerDurchsuchen.Add_Click({
+        # Der Dialog hat wie Explorer selbst einen "Neuer Ordner"-Button -
+        # deckt das Anlegen eines noch nicht existierenden Serverordners
+        # ab, ohne dass Version_Puppy selbst automatisiert Ordner auf
+        # einer Netzwerkfreigabe anlegen muss.
+        $gewaehlt = Show-OrdnerAuswahlDialog -Titel "Serverordner fuer diese Version auswaehlen"
+        if ($gewaehlt) { $txtServer.Text = $gewaehlt }
+    })
+    $form.Controls.Add($btnServerDurchsuchen)
     $y += 40
 
     $script:neuesProjektErgebnis = $null
@@ -1062,11 +1098,10 @@ function Show-VersionPopup {
     & $aktualisierePfad
 
     $btnNeu.Add_Click({
-        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-        $dialog.Description = "Projektordner auswaehlen"
-        if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-            $kandidaten = Get-ProjektKandidaten -Ordnerpfad $dialog.SelectedPath -Werkzeuge $Werkzeuge
-            $neuesProjekt = Show-NeuesProjektFenster -Ordnerpfad $dialog.SelectedPath -Kandidaten $kandidaten
+        $gewaehlterOrdner = Show-OrdnerAuswahlDialog -Titel "Projektordner auswaehlen"
+        if ($gewaehlterOrdner) {
+            $kandidaten = Get-ProjektKandidaten -Ordnerpfad $gewaehlterOrdner -Werkzeuge $Werkzeuge
+            $neuesProjekt = Show-NeuesProjektFenster -Ordnerpfad $gewaehlterOrdner -Kandidaten $kandidaten
             if ($neuesProjekt) {
                 $Config.projekte += $neuesProjekt
                 Save-Config -Config $Config
