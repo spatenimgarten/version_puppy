@@ -1,3 +1,3 @@
-version=1.0.2
-sha256=C316CC66E4DEE2B7F6962330BED5C2675A1489493857F6D75EA7A3472B86613B
-zipurl=https://github.com/spatenimgarten/version_puppy/archive/refs/tags/v1.0.2.zip
+version=1.0.3
+sha256=3C577C276B61F3473F08EB5BA61D26877FC1970DF8AEB553E435C101756D7E20
+zipurl=https://github.com/spatenimgarten/version_puppy/archive/refs/tags/v1.0.3.zip
