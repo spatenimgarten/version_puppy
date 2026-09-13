@@ -3,21 +3,24 @@
 Zum Abhaken beim manuellen Test auf der Windows-VM. Reihenfolge entspricht
 dem Installationsablauf; danach nach Belieben.
 
-## 1. Installation (Ein-Datei-Installer)
+## 1. Installation (Ein-Datei-Installer, signaturgeprueft)
 
 - [ ] Nur `install.ps1` in einen leeren Ordner kopieren (z.B. `C:\Tools\Version_Puppy\`).
 - [ ] `powershell.exe -ExecutionPolicy Bypass -File install.ps1` ausfuehren.
-- [ ] `Version_Puppy.ps1` (inkl. `allowed_signers`) wurde automatisch von GitHub nachgeladen. Kein `update.ps1` mehr (entfaellt als eigenstaendiges Skript).
+- [ ] `Version_Puppy.ps1` (inkl. `allowed_signers`) wurde signaturgeprueft als letztes signiertes Release von GitHub nachgeladen (`releases/latest/checksums.txt`+`.sig`, **kein** roher `main.zip`-Download mehr). Kein `update.ps1` mehr (entfaellt als eigenstaendiges Skript).
+- [ ] Auf einer Maschine **ohne** `ssh-keygen.exe` (OpenSSH-Client-Feature deaktiviert): Installation bricht mit klarer Fehlermeldung + Hinweis aufs Windows-Feature ab, statt ungeprueft weiterzumachen.
+- [ ] `checksums.txt`/`.sig` frisch von GitHub geladen? `raw.githubusercontent.com` cached teils einige Minuten nach einem Push - bei unerwartetem Hash-Mismatch direkt nach einem Release-Fix erst kurz warten und erneut versuchen, bevor man den Fehler weiterverfolgt.
 - [ ] Meldung "Autostart eingerichtet" erscheint, Verknuepfung liegt in `shell:startup`.
 - [ ] **Kein** Scheduled Task mehr in der Aufgabenplanung (`Version_Puppy_Update` gibt es nicht mehr - der Update-Check laeuft direkt im Watcher mit).
-- [ ] Frage "Jetzt sofort starten?" mit `j` beantworten - Version_Puppy startet, kein sichtbares Konsolenfenster (nur ggf. Popups).
+- [ ] Frage "Jetzt sofort starten?" mit `j` beantworten - Version_Puppy startet (`-WindowStyle Minimized`, kurz sichtbares Taskleisten-Icon, kein dauerhaftes Konsolenfenster).
+- [ ] **Autostart-Verknuepfung selbst testen** (nicht nur "Jetzt starten?"): `shell:startup` oeffnen, `Version_Puppy.lnk` doppelklicken (oder Rechner neu starten) -> Popup erscheint nach Prozessende zuverlaessig. War ein echter Bug auf einer VM: per `Start-Process -WindowStyle Hidden` gestarteter Prozess lief normal weiter, konnte aber **kein** WinForms-Fenster mehr anzeigen (stiller Haenger) - Fix war `-WindowStyle Minimized` statt `Hidden`, siehe README "Autostart mit Windows".
 - [ ] `install.ps1` ein zweites Mal ausfuehren, waehrend Version_Puppy noch laeuft -> Meldung "Version_Puppy laeuft bereits", **keine** zweite Instanz wird gestartet, keine Frage "Jetzt sofort starten?" erscheint.
 - [ ] `install.ps1` ein zweites Mal ausfuehren (idempotent) - keine Fehler, Verknuepfung wird einfach neu angelegt.
 
 ## 2. Erststart / Konfigurationsdateien
 
 - [ ] `config.json` wurde automatisch mit Standardwerten angelegt.
-- [ ] `werkzeuge.json` wurde automatisch mit Standardwerten angelegt (Eintrag `TIA`).
+- [ ] `werkzeuge.json` wurde automatisch aus `werkzeuge.example.json` angelegt (Eintraege `TIA`, `LOGO!Soft`, `SIMATIC Manager`, `WinCC flexible`).
 - [ ] `sync.json` existiert **nicht** direkt nach dem Erststart (wird erst beim ersten Oeffnen des Versions-Popups angelegt, da der Sync-Zaehler sie liest), dann mit leerem Array `[]`.
 
 ## 3. Live-Bearbeitung waehrend Version_Puppy laeuft
@@ -67,20 +70,23 @@ dem Installationsablauf; danach nach Belieben.
 - [ ] Werkzeug-Eintrag mit `erweiterungsMuster` **ohne** Zahlengruppe anlegen (z.B. `"^lsc$"` fuer LOGO!Soft Comfort, Name z.B. "LOGO9").
 - [ ] Version erstellen -> Dateiname hat **kein** doppeltes `-V-` (z.B. `10023-LOGO9-V001.zip`, nicht `10023-LOGO9-V-V001.zip`).
 - [ ] Zweite Version desselben Projekts -> Nummer zaehlt korrekt zu `V002` hoch (war ein echter Folgebug: der urspruengliche Fix hat nur den fertigen Dateinamen bereinigt, nicht den Praefix, den `Get-NaechsteVersionsnummer` zum Wiederfinden benutzt - haette sonst immer wieder `V001` geliefert und die vorige Version ueberschrieben).
-- [ ] Historie-Dateiname passt zum selben, bereinigten Schema (`10023-LOGO9-historie.json`, kein `-V-`).
+- [ ] Historie-Dateiname passt zum selben, bereinigten Schema (`10023-LOGO9-historie.html`, kein `-V-`).
 
-## 6b. Kommentar / lokale Versionshistorie
+## 6b. Kommentar / lokale Versionshistorie (HTML)
 
-- [ ] Kommentarfeld im Popup ausfuellen, "Version" klicken -> im Zielpfad liegt `{Nr}-{Werkzeug}-V{WVersion}-historie.json` mit einem Eintrag (Dateiname, Typ, Zeitstempel, Kommentar, SHA256-Hash).
-- [ ] Kommentarfeld leer lassen, "Version" klicken -> funktioniert trotzdem (Pflichtfeld ist es nicht), Historie-Eintrag hat leeres `kommentar`-Feld.
-- [ ] Noch eine Version erstellen -> zweiter Eintrag kommt zur selben Historie-Datei dazu, erster bleibt erhalten (Array waechst, wird nicht ueberschrieben).
-- [ ] Zwischenversion mit Kommentar erstellen -> landet ebenfalls in der Historie, `typ` = "Zwischenversion".
-- [ ] Historie-Datei waehrend des Schreibens absichtlich mit kaputtem JSON ueberschreiben, dann eine weitere Version erstellen -> Historie beginnt sauber neu (kein Absturz, Log-Eintrag "nicht lesbar, beginne neu").
+- [ ] Kommentarfeld im Popup ausfuellen, "Version" klicken -> im Zielpfad liegt `{Nr}-{Werkzeug}-V{WVersion}-historie.html` mit einem Eintrag (Dateiname, Typ, Zeitstempel, Kommentar, SHA256-Hash).
+- [ ] Historie-Datei per Doppelklick oeffnen -> zeigt sich im Standardbrowser als Tabelle (neueste Version oben), **kein** Webserver noetig, funktioniert auch offline.
+- [ ] Kommentarfeld leer lassen, "Version" klicken -> funktioniert trotzdem (Pflichtfeld ist es nicht), Zeile in der Tabelle hat leere Kommentar-Spalte.
+- [ ] Noch eine Version erstellen -> zweite Zeile kommt in der Tabelle dazu, erste bleibt erhalten (Historie waechst, wird nicht ueberschrieben).
+- [ ] Zwischenversion mit Kommentar erstellen -> landet ebenfalls in der Historie, Typ-Spalte zeigt "Zwischenversion".
+- [ ] Kommentar mit Sonderzeichen eintragen (z.B. `<Test> & "Quote"`) -> erscheint in der Tabelle als lesbarer Text, zerstoert **nicht** das Tabellenlayout (HTML-Escaping beim Rendern).
+- [ ] Allererste Version eines frisch registrierten Projekts erstellen (noch keine Historie-Datei vorhanden) -> Historie-Datei wird neu angelegt und zeigt beim Oeffnen genau eine Zeile, **kein** leerer/kaputter Inhalt (Regressionstest fuer den `@() | ConvertTo-Json`-Bug, siehe Abschnitt 11).
+- [ ] Historie-Datei waehrend des Schreibens absichtlich mit kaputtem Inhalt ueberschreiben (z.B. den `<script type="application/json">`-Block entfernen), dann eine weitere Version erstellen -> Historie beginnt sauber neu (kein Absturz, Log-Eintrag "nicht lesbar, beginne neu").
 
 ## 6c. Server-Sofortkopie (neu)
 
 - [ ] Serverpfad **erreichbar**: "Version" klicken -> ZIP erscheint **sofort** zusaetzlich im Serverpfad (gleicher Dateiname), `sync.json` bekommt **keinen** neuen Eintrag.
-- [ ] `{Nr}-{Werkzeug}-V{WVersion}-historie.json` liegt nach der Sofortkopie **auch** im Serverpfad, mit demselben Eintrag wie lokal.
+- [ ] `{Nr}-{Werkzeug}-V{WVersion}-historie.html` liegt nach der Sofortkopie **auch** im Serverpfad, mit demselben Eintrag wie lokal.
 - [ ] Serverpfad **nicht erreichbar** (z.B. Netzlaufwerk kurz trennen oder nicht-existierenden Pfad eintragen): "Version" klicken -> ZIP landet nur lokal, **ein** neuer Eintrag in `sync.json` mit `status: "wartend"`, Sync-Zaehler im Popup erhoeht sich.
 - [ ] **Zweite Maschine / Nummernkonflikt simulieren**: manuell eine Datei mit dem naechsten erwarteten Namen (z.B. `..V003.zip`) direkt in den Serverpfad legen, dann lokal eine neue Version erstellen -> `Get-NaechsteVersionsnummer` erkennt die hoehere Server-Nummer und ueberspringt sie (naechste lokale Nummer ist `V004`, nicht wieder `V003`).
 - [ ] **Echten Namenskonflikt erzwingen**: eine Datei mit dem naechsten erwarteten Namen, aber **anderem Inhalt**, manuell in den Serverpfad legen; danach WEITERHIN denselben Namen lokal erzeugen (z.B. indem man die soeben gelegte Server-Datei vor dem `Get-NaechsteVersionsnummer`-Aufruf nicht beruecksichtigt, oder einfach zeitgleich testet) -> eigene Version landet zusaetzlich als `..._KONFLIKT_<Zeitstempel>.zip` auf dem Server, **nicht** ueberschrieben, ein Historie-Eintrag mit `typ: "Konflikt"` erscheint (lokal und auf dem Server), eine Meldung informiert darueber.
@@ -120,8 +126,10 @@ Testergebnis (kein Fehler, kein Absturz, kein Hinweis im Popup).
 ## 11. Regressionstests fuer gefundene PowerShell-5.1-Bugs
 
 Siehe README "Bekannte PowerShell-5.1-Fallstricke" fuer den Hintergrund -
-beide Bugs waren vorher im Code, unabhaengig von den Server-Sync-Aenderungen,
-und haetten sich erst bei mehrfacher Nutzung gezeigt.
+alle Bugs waren vorher im Code und haetten sich erst bei mehrfacher Nutzung
+bzw. bestimmten Randfaellen (leere Liste, genau ein Eintrag) gezeigt.
 
 - [ ] `config.json`/`sync.json`/`werkzeuge.json`/eine Historie-Datei **mindestens zweimal** speichern lassen (z.B. zwei Versionen erstellen, zwei Projekte registrieren) -> **kein** Absturz mit "Der Pfad hat ein ungueltiges Format" (war `[System.IO.File]::Replace(..., $null)`-Bug, betraf jede zweite Speicherung).
 - [ ] `werkzeuge.json` mit **zwei** Eintraegen (siehe Abschnitt 3) und `sync.json` mit **zwei** wartenden Eintraegen (zwei Versionen bei nicht erreichbarem Server erstellen) -> in beiden Faellen werden **beide** Eintraege korrekt geladen/gezaehlt, keiner "verschwindet" (war der `@(Pipeline | ConvertFrom-Json)`-Bug).
+- [ ] Allererste Version eines Projekts erstellen (noch keine `historie.html` vorhanden) -> Historie-Datei zeigt beim Oeffnen die eine Zeile korrekt an, nicht leer/kaputt (war der `@() | ConvertTo-Json`-Bug: leeres Array ergab gar keinen JSON-Output statt `"[]"`, `JSON.parse("")` in der Seite waere fehlgeschlagen).
+- [ ] Server-Historie mit **genau einem** Eintrag synchronisieren (ein Projekt, eine Version, erreichbarer Serverpfad, danach lokale Historie-Datei loeschen und erneut eine Version erstellen, damit der Server-Stand mit genau einem Eintrag eingelesen wird) -> Sync funktioniert, kein Eintrag geht verloren (war ein fehlendes `@()` beim Aufruf von `ConvertFrom-HistorieHtml` in `Sync-VersionshistorieZumServer`).
