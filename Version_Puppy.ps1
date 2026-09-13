@@ -249,9 +249,19 @@ function Get-ProjektKandidaten {
 # ============================================================
 
 function Get-VersionsPraefix {
+    # Zentrale Stelle fuer den Praefix - wird sowohl zum Dateinamen-Bauen
+    # als auch zum Wiederfinden vorhandener Versionen (Get-NaechsteVersions-
+    # nummer) und fuer den Historie-Dateinamen benutzt. Muss deshalb ueberall
+    # exakt gleich aussehen: Werkzeuge ohne Versionszahl in der Dateiendung
+    # (z.B. LOGO!Soft Comfort, ".lsc") lassen werkzeugVersion leer - das
+    # "-V"-Segment faellt dann komplett weg, statt ein leeres "-V-"
+    # (Konsistenz-Bug: Get-NaechsteVersionsnummer haette gegen ein "-V-"
+    # geprueft, das im tatsaechlichen Dateinamen so nie vorkommt, und immer
+    # V001 gefunden).
     param($Projekt, $GlobalConfig)
     $tz = $GlobalConfig.trennzeichen
-    "$($Projekt.projektnummer)$tz$($Projekt.werkzeug)-V$($Projekt.werkzeugVersion)$tz"
+    $versionsTeil = if ([string]::IsNullOrEmpty($Projekt.werkzeugVersion)) { "" } else { "-V$($Projekt.werkzeugVersion)" }
+    "$($Projekt.projektnummer)$tz$($Projekt.werkzeug)$versionsTeil$tz"
 }
 
 function Get-NaechsteVersionsnummer {
@@ -295,11 +305,7 @@ function Build-Versionsdateiname {
         $kern = "$kern$tz$($GlobalConfig.kuerzel)$tz$timestamp"
     }
 
-    # Werkzeuge ohne Versionszahl in der Dateiendung (z.B. LOGO!Soft Comfort,
-    # ".lsc" ohne Ziffer) lassen werkzeugVersion leer - das hinterlaesst
-    # sonst ein redundantes "-V-" (aus dem fest codierten "-V" in
-    # Get-VersionsPraefix gefolgt vom Trennzeichen).
-    ("$kern.zip") -replace '-V-', '-'
+    "$kern.zip"
 }
 
 # endregion
