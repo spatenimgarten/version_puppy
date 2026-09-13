@@ -46,6 +46,11 @@ $UpdateManifestSigUrl = "$UpdateManifestUrl.sig"
 $UpdatePrincipal      = "release"
 $UpdatePruefIntervall = [TimeSpan]::FromHours(1)
 
+# Zeitlimit je Netzwerkoperation gegen den Serverpfad (Copy-VersionZumServer,
+# Sync-VersionshistorieZumServer) - eine haengende/tote Freigabe darf das
+# Versions-Popup nicht auf unbestimmte Zeit blockieren.
+$ServerTimeoutSekunden = 60
+
 function Write-Log {
     param([string]$Nachricht)
     try {
@@ -61,15 +66,23 @@ function Write-Log {
 function Set-JsonAtomar {
     # Schreibt zuerst in eine Temp-Datei und ersetzt das Ziel dann atomar -
     # verhindert eine abgeschnittene/kaputte JSON-Datei, falls der Prozess
-    # exakt waehrend des Schreibens beendet wird (z.B. update.ps1s
-    # Stop-Process -Force). [System.IO.File]::Replace() statt Move-Item
-    # -Force, da Move-Item -Force bei existierendem Ziel unter Windows
-    # PowerShell 5.1 nicht garantiert atomar ist.
+    # exakt waehrend des Schreibens beendet wird (z.B. ein Selbst-Neustart
+    # nach eingespieltem Update). [System.IO.File]::Replace() statt
+    # Move-Item -Force, da Move-Item -Force bei existierendem Ziel unter
+    # Windows PowerShell 5.1 nicht garantiert atomar ist.
+    #
+    # WICHTIG: als drittes Argument (Backup-Pfad) NIE $null uebergeben -
+    # das wirft auf diesem PowerShell-5.1/.NET-Stand zuverlaessig
+    # "Der Pfad hat ein ungueltiges Format" (reproduziert unabhaengig von
+    # jeglichem Aufrufkontext). Ein echter Backup-Pfad funktioniert, wird
+    # danach einfach wieder geloescht.
     param([string]$Pfad, $Objekt)
-    $tempPfad = "$Pfad.tmp"
+    $tempPfad   = "$Pfad.tmp"
+    $backupPfad = "$Pfad.bak"
     $Objekt | ConvertTo-Json -Depth 10 | Set-Content -Path $tempPfad -Encoding UTF8
     if (Test-Path $Pfad) {
-        [System.IO.File]::Replace($tempPfad, $Pfad, $null)
+        [System.IO.File]::Replace($tempPfad, $Pfad, $backupPfad)
+        Remove-Item -Path $backupPfad -Force -ErrorAction SilentlyContinue
     } else {
         Move-Item -Path $tempPfad -Destination $Pfad
     }
@@ -152,7 +165,14 @@ function Load-Werkzeuge {
         return $werkzeuge
     }
     $inhalt = Get-Content -Path $WerkzeugePfad -Raw -Encoding UTF8
-    @($inhalt | ConvertFrom-Json)
+    # ZWINGEND erst in eine Variable parsen, DANACH mit @() absichern -
+    # "@(... | ConvertFrom-Json)" als EIN Ausdruck verschachtelt auf diesem
+    # PowerShell-5.1-Stand ein Ergebnis mit 2+ Elementen faelschlich in ein
+    # 1-Element-Array (reproduzierbar, unabhaengig vom Inhalt). Erst danach
+    # @() drauf ist der einzige Weg, der sowohl fuer 1 als auch fuer
+    # mehrere Eintraege korrekt funktioniert.
+    $geparst = $inhalt | ConvertFrom-Json
+    @($geparst)
 }
 
 function Save-Werkzeuge {
@@ -168,7 +188,9 @@ function Load-Sync {
         return @()
     }
     $inhalt = Get-Content -Path $SyncPfad -Raw -Encoding UTF8
-    @($inhalt | ConvertFrom-Json)
+    # Siehe Kommentar in Load-Werkzeuge - Zwischenvariable ist hier Pflicht.
+    $geparst = $inhalt | ConvertFrom-Json
+    @($geparst)
 }
 
 function Save-Sync {
@@ -348,28 +370,47 @@ function Get-VersionshistorieDatei {
 }
 
 function Add-VersionshistorieEintrag {
-    param($Projekt, $GlobalConfig, [string]$Dateiname, [string]$Typ, [string]$Kommentar)
+    # $Hash ist optional (z.B. leer bei einem reinen Konflikt-Hinweiseintrag,
+    # der keine eigene Datei referenziert) - SHA256 des Zip-Inhalts fuer
+    # normale Versionen, dient der Konflikterkennung in
+    # Copy-VersionZumServer als eindeutiger Inhaltsvergleich.
+    param($Projekt, $GlobalConfig, [string]$Dateiname, [string]$Typ, [string]$Kommentar, [string]$Hash = "")
 
     $historieDatei = Get-VersionshistorieDatei -Projekt $Projekt -GlobalConfig $GlobalConfig
-    $eintraege = @()
-    if (Test-Path $historieDatei) {
-        try {
-            $eintraege = @(Get-Content -Path $historieDatei -Raw -Encoding UTF8 | ConvertFrom-Json)
-        } catch {
-            # Kaputte Historie nicht fortschreiben und damit staendig neue
-            # Fehler produzieren - lieber mit leerer Liste neu beginnen als
-            # den Watcher zu gefaehrden.
-            Write-Log "Versionshistorie '$historieDatei' nicht lesbar, beginne neu: $($_.Exception.Message)"
-            $eintraege = @()
-        }
-    }
+    # @(...) noetig: eine Funktion, die ein 1-Element-Array zurueckgibt,
+    # liefert dem Aufrufer sonst ein entpacktes Einzelobjekt statt eines
+    # Arrays (PowerShell-Eigenheit) - sonst wuerde .Count spaeter fehlen
+    # bzw. "+=" ein zweites Objekt statt ein Array-Element anhaengen.
+    $eintraege = @(Read-VersionshistorieDatei -Pfad $historieDatei)
     $eintraege += [PSCustomObject]@{
         dateiname  = $Dateiname
         typ        = $Typ
         erstelltAm = (Get-Date).ToString("s")
         kommentar  = $Kommentar
+        hash       = $Hash
     }
     Set-JsonAtomar -Pfad $historieDatei -Objekt $eintraege
+}
+
+function Read-VersionshistorieDatei {
+    # Ausgelagert aus Add-VersionshistorieEintrag, da Sync-Versionshistorie-
+    # ZumServer (Server-Sofortkopie-Region) dieselbe robuste Lesart auch
+    # fuer die serverseitige Historie-Datei braucht.
+    param([string]$Pfad)
+    if (-not (Test-Path $Pfad)) { return @() }
+    try {
+        # Siehe Kommentar in Load-Werkzeuge - Zwischenvariable ist hier
+        # Pflicht, "@(... | ConvertFrom-Json)" als ein Ausdruck verschachtelt
+        # sonst ein Ergebnis mit 2+ Elementen faelschlich.
+        $geparst = Get-Content -Path $Pfad -Raw -Encoding UTF8 | ConvertFrom-Json
+        return @($geparst)
+    } catch {
+        # Kaputte Historie nicht fortschreiben und damit staendig neue
+        # Fehler produzieren - lieber mit leerer Liste neu beginnen als
+        # den Watcher zu gefaehrden.
+        Write-Log "Versionshistorie '$Pfad' nicht lesbar, beginne neu: $($_.Exception.Message)"
+        return @()
+    }
 }
 
 # endregion
@@ -489,41 +530,176 @@ function Invoke-UpdateEinspielen {
 # solange der Server im Moment des Speicherns erreichbar ist)
 # ============================================================
 
+function Invoke-MitNetzwerkTimeout {
+    # Fuehrt eine Datei-/Netzwerkoperation in einem Hintergrund-Job mit
+    # Zeitlimit aus - eine haengende/tote Netzwerkfreigabe darf das
+    # Versions-Popup nicht auf unbestimmte Zeit blockieren. Variablen von
+    # aussen muessen im Scriptblock ueber $using: referenziert werden
+    # (Start-Job laeuft in einem eigenen Prozess ohne Zugriff auf den
+    # aufrufenden Scope). Wirft bei Zeitueberschreitung oder wenn die
+    # Aktion selbst einen Fehler wirft - der Aufrufer faengt das wie jeden
+    # anderen Kopierfehler ab.
+    param([scriptblock]$Aktion, [int]$TimeoutSekunden)
+    $job = Start-Job -ScriptBlock $Aktion
+    try {
+        if (-not (Wait-Job -Job $job -Timeout $TimeoutSekunden)) {
+            throw "Zeitueberschreitung nach $TimeoutSekunden Sekunden."
+        }
+        Receive-Job -Job $job -ErrorAction Stop
+    } finally {
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Sync-VersionshistorieZumServer {
+    # Vereinigt lokale und Server-Historie nach 'dateiname' und schreibt das
+    # Ergebnis auf beide Seiten zurueck. Ein Vereinigen ist hier immer
+    # verlustfrei moeglich - jeder Eintrag beschreibt eine tatsaechlich
+    # erstellte, unveraenderliche Datei -, anders als bei den Versions-ZIPs
+    # selbst, die einen echten Namenskonflikt erzeugen koennen. Ohne diese
+    # Vereinigung wuerde eine zweite Maschine die Historie-Eintraege der
+    # ersten beim naechsten Speichern unbemerkt ueberschreiben, weil es
+    # (anders als bei den Versions-Zips) nur einen festen Dateinamen je
+    # Projekt gibt.
+    param($Projekt, $GlobalConfig, [string]$LokaleHistorieDatei, [int]$TimeoutSekunden)
+
+    $praefix             = Get-VersionsPraefix -Projekt $Projekt -GlobalConfig $GlobalConfig
+    $serverHistorieDatei = Join-Path $Projekt.serverpfad "${praefix}historie.json"
+
+    $serverEintraege = @()
+    try {
+        $serverVorhanden = Invoke-MitNetzwerkTimeout -TimeoutSekunden $TimeoutSekunden -Aktion { Test-Path $using:serverHistorieDatei }
+        if ($serverVorhanden) {
+            $serverInhalt = Invoke-MitNetzwerkTimeout -TimeoutSekunden $TimeoutSekunden -Aktion { Get-Content -Path $using:serverHistorieDatei -Raw -Encoding UTF8 }
+            # Siehe Kommentar in Load-Werkzeuge - Zwischenvariable Pflicht.
+            $serverGeparst = $serverInhalt | ConvertFrom-Json
+            $serverEintraege = @($serverGeparst)
+        }
+    } catch {
+        Write-Log "Server-Historie '$serverHistorieDatei' konnte nicht gelesen werden, vereinige nur mit leerer Server-Seite: $($_.Exception.Message)"
+    }
+
+    # @(...) noetig - siehe Kommentar in Add-VersionshistorieEintrag.
+    $lokaleEintraege = @(Read-VersionshistorieDatei -Pfad $LokaleHistorieDatei)
+
+    $vereinigt = @{}
+    foreach ($e in $serverEintraege) { $vereinigt[$e.dateiname] = $e }
+    foreach ($e in $lokaleEintraege) { $vereinigt[$e.dateiname] = $e }
+    $ergebnis = @($vereinigt.Values | Sort-Object erstelltAm)
+
+    Set-JsonAtomar -Pfad $LokaleHistorieDatei -Objekt $ergebnis
+
+    $json                = $ergebnis | ConvertTo-Json -Depth 10
+    $tempName             = "historie.tmp-$($GlobalConfig.kuerzel)-$(Get-Date -Format 'yyyyMMddHHmmss').json"
+    $serverTemp           = Join-Path $Projekt.serverpfad $tempName
+    $serverHistorieBackup = "$serverHistorieDatei.bak"
+
+    Invoke-MitNetzwerkTimeout -TimeoutSekunden $TimeoutSekunden -Aktion {
+        $using:json | Set-Content -Path $using:serverTemp -Encoding UTF8
+    } | Out-Null
+    Invoke-MitNetzwerkTimeout -TimeoutSekunden $TimeoutSekunden -Aktion {
+        if (Test-Path $using:serverHistorieDatei) {
+            # Kein $null als Backup-Pfad - siehe Kommentar in Set-JsonAtomar,
+            # derselbe Bug gilt hier genauso.
+            [System.IO.File]::Replace($using:serverTemp, $using:serverHistorieDatei, $using:serverHistorieBackup)
+            Remove-Item -Path $using:serverHistorieBackup -Force -ErrorAction SilentlyContinue
+        } else {
+            Move-Item -Path $using:serverTemp -Destination $using:serverHistorieDatei
+        }
+    } | Out-Null
+}
+
 function Copy-VersionZumServer {
     # Best-Effort-Sofortkopie direkt beim Erstellen der Version - kein
     # Hintergrundabgleich noetig, solange der Serverpfad gerade erreichbar
-    # ist. Schreibt zuerst unter einem eindeutigen Zwischennamen (Kuerzel +
-    # Zeitstempel, damit mehrere Maschinen sich nicht in die Quere kommen)
-    # und benennt danach auf den echten Dateinamen um, damit bei einem
-    # Abbruch mitten im Kopieren (Netzwerk weg, Server offline) nie eine
-    # halbfertige Datei unter dem echten Namen auf dem Server liegt.
-    param($Projekt, $GlobalConfig, [string]$QuellZip, [string]$Dateiname)
+    # ist. Jede Netzwerkoperation laeuft ueber Invoke-MitNetzwerkTimeout,
+    # damit eine haengende/tote Freigabe das Popup nicht auf unbestimmte
+    # Zeit blockiert - ein Timeout wird wie jeder andere Kopierfehler
+    # behandelt (Ruecksprung false -> Aufrufer traegt in sync.json ein).
+    #
+    # Schreibt das Zip zuerst unter einem eindeutigen Zwischennamen
+    # (Kuerzel + Zeitstempel) und benennt danach auf den echten Dateinamen
+    # um, damit bei einem Abbruch mitten im Kopieren nie eine halbfertige
+    # Datei unter dem echten Namen auf dem Server liegt.
+    #
+    # Existiert der Zielname auf dem Server schon mit ANDEREM Inhalt
+    # (Hash-Vergleich) - z.B. weil zwei Maschinen im selben Moment dieselbe
+    # naechste Nummer vergeben haben (Restrisiko trotz Get-Naechste-
+    # Versionsnummers Server-Check, siehe dort) -, wird NICHT
+    # ueberschrieben: unser Stand landet unter einem "_KONFLIKT_"-Namen
+    # daneben, ein Historie-Eintrag und eine Meldung markieren das fuer
+    # die manuelle Aufloesung.
+    param($Projekt, $GlobalConfig, [string]$QuellZip, [string]$Dateiname, [string]$ZipHash, [string]$LokaleHistorieDatei)
 
     if ([string]::IsNullOrWhiteSpace($Projekt.serverpfad)) { return $false }
 
-    $tempName = "$Dateiname.tmp-$($GlobalConfig.kuerzel)-$(Get-Date -Format 'yyyyMMddHHmmss')"
-    $zielTemp = Join-Path $Projekt.serverpfad $tempName
-    $ziel     = Join-Path $Projekt.serverpfad $Dateiname
+    try {
+        $serverErreichbar = Invoke-MitNetzwerkTimeout -TimeoutSekunden $ServerTimeoutSekunden -Aktion { Test-Path $using:Projekt.serverpfad }
+    } catch {
+        Write-Log "Erreichbarkeitspruefung fuer Serverpfad '$($Projekt.serverpfad)' fehlgeschlagen: $($_.Exception.Message)"
+        $serverErreichbar = $false
+    }
+    if (-not $serverErreichbar) {
+        Write-Log "Serverpfad '$($Projekt.serverpfad)' nicht erreichbar, '$Dateiname' bleibt in Sync-Warteliste."
+        return $false
+    }
+
+    $zielDateiname  = $Dateiname
+    $zielEndgueltig = Join-Path $Projekt.serverpfad $zielDateiname
+    $zielTemp       = $null
 
     try {
-        if (-not (Test-Path $Projekt.serverpfad)) {
-            Write-Log "Serverpfad '$($Projekt.serverpfad)' nicht erreichbar, '$Dateiname' bleibt in Sync-Warteliste."
-            return $false
+        $vorhanden = Invoke-MitNetzwerkTimeout -TimeoutSekunden $ServerTimeoutSekunden -Aktion { Test-Path $using:zielEndgueltig }
+        if ($vorhanden) {
+            $vorhandenerHash = Invoke-MitNetzwerkTimeout -TimeoutSekunden $ServerTimeoutSekunden -Aktion { (Get-FileHash -Path $using:zielEndgueltig -Algorithm SHA256).Hash }
+            if ($vorhandenerHash -eq $ZipHash) {
+                Write-Log "Version '$Dateiname' liegt inhaltsgleich bereits auf dem Server, nichts zu tun."
+                return $true
+            }
+
+            $zielDateiname  = $Dateiname -replace '\.zip$', "_KONFLIKT_$(Get-Date -Format 'yyyyMMdd-HHmmss').zip"
+            $zielEndgueltig = Join-Path $Projekt.serverpfad $zielDateiname
+            Write-Log "Konflikt fuer '$($Projekt.name)': Server hat unter '$Dateiname' bereits einen anderen Inhalt - lege unseren Stand als '$zielDateiname' ab, manuelle Aufloesung noetig."
+            [System.Windows.Forms.MessageBox]::Show(
+                "Auf dem Server liegt unter '$Dateiname' bereits eine andere Version (vermutlich zeitgleich von einer anderen Maschine erstellt).`n`nDeine Version wurde zusaetzlich als '$zielDateiname' abgelegt - bitte beide manuell vergleichen und den Konflikt aufloesen.",
+                "Konflikt auf dem Server",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+            Add-VersionshistorieEintrag -Projekt $Projekt -GlobalConfig $GlobalConfig -Dateiname $zielDateiname -Typ "Konflikt" -Kommentar "Kollidierte auf dem Server mit vorhandenem '$Dateiname' - manuell aufloesen." -Hash $ZipHash
         }
+
+        $tempName = "$zielDateiname.tmp-$($GlobalConfig.kuerzel)-$(Get-Date -Format 'yyyyMMddHHmmss')"
+        $zielTemp = Join-Path $Projekt.serverpfad $tempName
 
         # Vor dem Kopieren aufraeumen, falls von einem frueheren, mitten
         # abgebrochenen Versuch mit demselben Zwischennamen noch etwas
         # liegt - haelt das Serververzeichnis sauber statt Leichen
         # anzusammeln.
-        Remove-Item -Path $zielTemp -Force -ErrorAction SilentlyContinue
+        Invoke-MitNetzwerkTimeout -TimeoutSekunden $ServerTimeoutSekunden -Aktion {
+            Remove-Item -Path $using:zielTemp -Force -ErrorAction SilentlyContinue
+        } | Out-Null
 
-        Copy-Item -Path $QuellZip -Destination $zielTemp -Force
-        Move-Item -Path $zielTemp -Destination $ziel -Force
-        Write-Log "Version '$Dateiname' zusaetzlich auf Serverpfad kopiert."
+        Invoke-MitNetzwerkTimeout -TimeoutSekunden $ServerTimeoutSekunden -Aktion {
+            Copy-Item -Path $using:QuellZip -Destination $using:zielTemp -Force
+        } | Out-Null
+        Invoke-MitNetzwerkTimeout -TimeoutSekunden $ServerTimeoutSekunden -Aktion {
+            Move-Item -Path $using:zielTemp -Destination $using:zielEndgueltig -Force
+        } | Out-Null
+        Write-Log "Version '$zielDateiname' zusaetzlich auf Serverpfad kopiert."
+
+        try {
+            Sync-VersionshistorieZumServer -Projekt $Projekt -GlobalConfig $GlobalConfig -LokaleHistorieDatei $LokaleHistorieDatei -TimeoutSekunden $ServerTimeoutSekunden
+        } catch {
+            Write-Log "Historie konnte nicht mit dem Server abgeglichen werden: $($_.Exception.Message)"
+        }
+
         return $true
     } catch {
         Write-Log "Kopieren von '$Dateiname' auf Serverpfad fehlgeschlagen, bleibt in Sync-Warteliste: $($_.Exception.Message)"
-        Remove-Item -Path $zielTemp -Force -ErrorAction SilentlyContinue
+        if ($zielTemp) {
+            try { Invoke-MitNetzwerkTimeout -TimeoutSekunden $ServerTimeoutSekunden -Aktion { Remove-Item -Path $using:zielTemp -Force -ErrorAction SilentlyContinue } | Out-Null } catch { }
+        }
         return $false
     }
 }
@@ -596,8 +772,18 @@ function New-ProjektVersion {
     $Projekt.letzteAenderung = (Get-Date).ToString("s")
     Write-Log "Version '$dateiname' fuer '$($Projekt.name)' erstellt."
 
+    # SHA256 des fertigen Zips - dient sowohl als Beleg in der Historie als
+    # auch Copy-VersionZumServer als Inhaltsvergleich zur Konflikterkennung.
     try {
-        Add-VersionshistorieEintrag -Projekt $Projekt -GlobalConfig $Config.global -Dateiname $dateiname -Typ $Typ -Kommentar $Kommentar
+        $zipHash = (Get-FileHash -Path $zielPfad -Algorithm SHA256).Hash
+    } catch {
+        Write-Log "Hash fuer '$dateiname' konnte nicht berechnet werden: $($_.Exception.Message)"
+        $zipHash = ""
+    }
+
+    $historieDatei = Get-VersionshistorieDatei -Projekt $Projekt -GlobalConfig $Config.global
+    try {
+        Add-VersionshistorieEintrag -Projekt $Projekt -GlobalConfig $Config.global -Dateiname $dateiname -Typ $Typ -Kommentar $Kommentar -Hash $zipHash
     } catch {
         # Historie ist eine Zugabe, kein Kriterium fuer Erfolg/Misserfolg der
         # Version selbst - Fehler hier loggen, aber die bereits erstellte
@@ -612,7 +798,7 @@ function New-ProjektVersion {
     # Version selbst.
     $aufServerKopiert = $false
     try {
-        $aufServerKopiert = Copy-VersionZumServer -Projekt $Projekt -GlobalConfig $Config.global -QuellZip $zielPfad -Dateiname $dateiname
+        $aufServerKopiert = Copy-VersionZumServer -Projekt $Projekt -GlobalConfig $Config.global -QuellZip $zielPfad -Dateiname $dateiname -ZipHash $zipHash -LokaleHistorieDatei $historieDatei
     } catch {
         Write-Log "Server-Sofortkopie fuer '$dateiname' unerwartet fehlgeschlagen: $($_.Exception.Message)"
     }

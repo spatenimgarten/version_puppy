@@ -5,13 +5,13 @@ Automation) und perspektivisch weitere Engineering-Tools.
 
 ## Status
 
-Manager Stufe 1 (lokale Versionierung) plus einfache Server-Sofortkopie: jede
-Version wird direkt beim Erstellen zusaetzlich auf den Serverpfad kopiert,
-wenn der gerade erreichbar ist (siehe "Funktionsweise"). Eine vollwertige
-Stufe 2 (Hintergrund-Sync mit SHA256-Abgleich, Konflikterkennung,
-HTML-Historie) ist konzeptionell vorbereitet (Sync-Warteliste wird bereits
-lokal mitgefuehrt), aber noch nicht implementiert - die Warteliste faengt
-bis dahin nur die Faelle auf, in denen die Sofortkopie nicht geklappt hat.
+Manager Stufe 1 (lokale Versionierung) plus Server-Sofortkopie: jede Version
+wird direkt beim Erstellen zusaetzlich auf den Serverpfad kopiert, wenn der
+gerade erreichbar ist - inklusive SHA256-Hash je Version, Namenskonflikt-
+Erkennung (`_KONFLIKT_<Zeitstempel>`) und Zeitlimit gegen haengende
+Netzwerkfreigaben (siehe "Funktionsweise"). Eine vollwertige Stufe 2
+(Hintergrund-Sync fuer bereits in `sync.json` wartende Versionen, HTML-
+Historie) ist konzeptionell vorbereitet, aber noch nicht implementiert.
 
 ## Installation
 
@@ -165,25 +165,39 @@ unbegrenzt.
   Bestaetigung - keine automatische Vorauswahl). Dabei werden zusaetzlich
   Zielpfad und Serverpfad erfasst (beides Pflichtfelder).
 - Nach dem lokalen ZIP wird sofort versucht, dieselbe Datei zusaetzlich auf
-  den Serverpfad zu kopieren (`Copy-VersionZumServer`): Ist der Serverpfad
-  gerade erreichbar, landet sie dort unter einem eindeutigen Zwischennamen
-  (Kuerzel + Zeitstempel) und wird danach auf den echten Dateinamen
-  umbenannt - so bleibt bei einem Abbruch mitten im Kopieren nie eine
-  halbfertige Datei unter dem echten Namen auf dem Server liegen. Klappt
-  die Sofortkopie nicht (Server nicht erreichbar, Kopierfehler), landet die
-  Version stattdessen in der `sync.json`-Warteliste zum spaeteren
-  Nachholen - kein SHA256-Abgleich, kein Konflikthandling, das bleibt der
-  vollen Stufe 2 vorbehalten.
+  den Serverpfad zu kopieren (`Copy-VersionZumServer`). Jede Netzwerk-
+  operation dabei laeuft mit Zeitlimit (`$ServerTimeoutSekunden`, Standard
+  60s, ueber `Invoke-MitNetzwerkTimeout`) - eine haengende/tote Freigabe
+  blockiert das Popup nicht auf unbestimmte Zeit, ein Timeout zaehlt wie
+  jeder andere Kopierfehler.
+  - Serverpfad erreichbar, Zielname frei oder inhaltsgleich (SHA256-
+    Vergleich) vorhanden: Kopie unter eindeutigem Zwischennamen (Kuerzel +
+    Zeitstempel), danach atomar auf den echten Namen umbenannt - nie eine
+    halbfertige Datei unter dem echten Namen.
+  - Zielname existiert bereits mit ANDEREM Inhalt (Namenskonflikt, z.B.
+    zwei Maschinen im selben Moment): wird NICHT ueberschrieben. Die eigene
+    Version landet zusaetzlich unter `..._KONFLIKT_<Zeitstempel>.zip`, ein
+    Historie-Eintrag (Typ "Konflikt") und eine Meldung markieren das fuer
+    die manuelle Aufloesung.
+  - Serverpfad nicht erreichbar oder jeder andere Fehler (inkl. Timeout):
+    Version landet in der `sync.json`-Warteliste zum spaeteren Nachholen.
+- Die lokale Versionshistorie (siehe unten) wird bei jeder erfolgreichen
+  Sofortkopie mit der Server-Historie **vereinigt** (`Sync-Versionshistorie-
+  ZumServer`, nach `dateiname`) und auf beiden Seiten zurueckgeschrieben -
+  sonst wuerde eine zweite Maschine die Historie-Eintraege der ersten beim
+  naechsten Speichern unbemerkt ueberschreiben, weil es dafuer (anders als
+  bei den Versions-Zips) nur einen festen Dateinamen je Projekt gibt.
 - Verwaiste Projekteintraege (Pfad existiert nicht mehr) werden beim Start
   still bereinigt.
 - Jede erstellte Version (auch Zwischenversionen) landet zusaetzlich zum
-  ZIP als Eintrag (Dateiname, Typ, Zeitstempel, Kommentar) in einer
-  lokalen Versionshistorie `{Praefix}historie.json` im Zielpfad - eine
-  Datei je Projekt, ueber den Praefix vom Zielpfad anderer Projekte
-  getrennt. Der Kommentar wird auch in den `sync.json`-Eintrag
+  ZIP als Eintrag (Dateiname, Typ, Zeitstempel, Kommentar, SHA256-Hash) in
+  einer Versionshistorie `{Praefix}historie.json` - eine Datei je Projekt,
+  ueber den Praefix von anderen Projekten getrennt, lokal im Zielpfad UND
+  (bei erreichbarem Server) auf dem Serverpfad gespiegelt. Der Hash dient
+  sowohl als Beleg als auch der Namenskonflikt-Erkennung beim Server-
+  Kopieren. Der Kommentar wird auch in den `sync.json`-Eintrag
   uebernommen. Vorstufe fuer die geplante HTML-Historie aus Stufe 2, die
-  diese Daten serverseitig zusammenfuehren soll - in Stufe 1 nur lokale
-  Rohdaten, keine Aufbereitung.
+  diese Daten aufbereiten soll - aktuell nur Rohdaten.
 
 ## Konfiguration
 
@@ -233,9 +247,35 @@ ausgeschlossen.
   keine existiert - eine bereits vorhandene, angepasste `werkzeuge.json`
   wird dabei nie ueberschrieben.
 
+## Bekannte PowerShell-5.1-Fallstricke in diesem Code
+
+Zwei Bugs, die sich nicht aus dem Code selbst erschliessen und beim
+Weiterentwickeln leicht wieder eingebaut werden - beide reproduzierbar
+und unabhaengig vom konkreten Aufrufkontext:
+
+- **`[System.IO.File]::Replace($tmp, $ziel, $null)`** wirft auf diesem
+  PowerShell-5.1/.NET-Stand zuverlaessig `"Der Pfad hat ein ungueltiges
+  Format"`, sobald der dritte Parameter (Backup-Pfad) `$null` ist - selbst
+  mit ansonsten komplett validen Pfaden. Betraf urspruenglich jede zweite
+  und weitere Speicherung von `config.json`/`sync.json`/`werkzeuge.json`/
+  `historie.json` (die erste Speicherung nimmt den `Move-Item`-Zweig, weil
+  die Datei noch nicht existiert, und faellt dadurch nicht auf). Fix: immer
+  einen echten (danach geloeschten) Backup-Pfad uebergeben, nie `$null`
+  (siehe `Set-JsonAtomar`).
+- **`@(Get-Content ... | ConvertFrom-Json)`** als EIN zusammengesetzter
+  Ausdruck verschachtelt ein Ergebnis mit 2+ Elementen faelschlich in ein
+  1-Element-Array (`.Count` luegt dann), obwohl genau dieses `@()` eigent-
+  lich das bekannte "1 JSON-Element wird zum Skalar statt Array"-Problem
+  loesen soll. Betraf `Load-Werkzeuge` und `Load-Sync`, sobald dort ein
+  zweiter Eintrag dazukam (z.B. ein zweites Werkzeug wie LOGO!Soft Comfort
+  neben TIA) - das zweite Werkzeug/der zweite Sync-Eintrag wurde dadurch
+  unbemerkt "unsichtbar". Fix: IMMER erst in eine Zwischenvariable parsen,
+  danach in einem eigenen Schritt mit `@()` absichern - nie
+  `@(Pipeline | ConvertFrom-Json)` als ein Ausdruck.
+
 ## Naechste Schritte
 
-- Manager Stufe 2: Server-Sync (SHA256-Vergleich, alle 10 Min.), Konflikt-
-  handling (`_KONFLIKT_<datum>`-Suffix), HTML-Historie.
+- Manager Stufe 2: automatisches Nachholen der `sync.json`-Warteliste,
+  sobald der Server wieder erreichbar ist; HTML-Historie.
 - Auto-Erkennung, welche Dateien innerhalb einer TIA-Session konkret
   geaendert wurden (noch nicht spezifiziert).
