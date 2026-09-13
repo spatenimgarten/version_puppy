@@ -295,7 +295,11 @@ function Build-Versionsdateiname {
         $kern = "$kern$tz$($GlobalConfig.kuerzel)$tz$timestamp"
     }
 
-    "$kern.zip"
+    # Werkzeuge ohne Versionszahl in der Dateiendung (z.B. LOGO!Soft Comfort,
+    # ".lsc" ohne Ziffer) lassen werkzeugVersion leer - das hinterlaesst
+    # sonst ein redundantes "-V-" (aus dem fest codierten "-V" in
+    # Get-VersionsPraefix gefolgt vom Trennzeichen).
+    ("$kern.zip") -replace '-V-', '-'
 }
 
 # endregion
