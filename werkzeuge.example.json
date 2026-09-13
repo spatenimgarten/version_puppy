@@ -3,5 +3,11 @@
         "name": "TIA",
         "prozessName": "Siemens.Automation.Portal.exe",
         "erweiterungsMuster": "^ap(\\d+)$"
+    },
+    {
+        "name": "LOGO!Soft",
+        "prozessName": "javaw.exe",
+        "erweiterungsMuster": "^lsc$",
+        "kommandozeilenMuster": "LOGOComfort"
     }
 ]

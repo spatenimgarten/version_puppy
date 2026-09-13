@@ -231,6 +231,12 @@ ausgeschlossen.
           "name": "TIA",
           "prozessName": "Siemens.Automation.Portal.exe",
           "erweiterungsMuster": "^ap(\\d+)$"
+      },
+      {
+          "name": "LOGO!Soft",
+          "prozessName": "javaw.exe",
+          "erweiterungsMuster": "^lsc$",
+          "kommandozeilenMuster": "LOGOComfort"
       }
   ]
   ```
@@ -239,6 +245,15 @@ ausgeschlossen.
   einen Treffer, kein Fehler, kein spuerbarer Overhead. Eine gemeinsame
   Werkzeugliste ueber mehrere Maschinen hinweg ist also unbedenklich, auch
   wenn nicht jede Maschine jedes Tool installiert hat.
+
+  Das optionale Feld `kommandozeilenMuster` grenzt Werkzeuge ein, die
+  unter einem generischen Wirtsprozess laufen (z.B. LOGO!Soft Comfort als
+  `javaw.exe` ueber einen InstallAnywhere-Launcher) - ohne dieses Feld
+  wuerde jeder Prozess mit passendem Namen als Treffer zaehlen, mit dem
+  Feld nur einer, dessen Kommandozeile (per Regex, hier via
+  `Get-CimInstance Win32_Process`) zusaetzlich passt. Fehlt das Feld,
+  bleibt es beim reinen Namensabgleich per `Get-Process` (wie bisher,
+  z.B. bei TIA).
 
   [`werkzeuge.example.json`](werkzeuge.example.json) ist Teil des Repos
   (im Gegensatz zu `werkzeuge.json` selbst) und dient als Vorlage mit

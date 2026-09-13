@@ -1210,13 +1210,32 @@ function Show-VersionPopup {
 #   ohne erhoehte Rechte vorauszusetzen.
 # ============================================================
 
+function Test-WerkzeugLaeuft {
+    # Manche Werkzeuge laufen unter einem generischen Wirtsprozess (z.B.
+    # LOGO!Soft Comfort als javaw.exe) - reiner Prozessname-Abgleich wuerde
+    # dann jeden Prozess mit diesem Namen faelschlich als Treffer werten.
+    # Optionales kommandozeilenMuster grenzt das per Regex auf die
+    # tatsaechliche Kommandozeile ein; ohne das Feld bleibt das Verhalten
+    # unveraendert (reiner Get-Process-Namensabgleich).
+    param($Werkzeug)
+
+    $prozessBasisname = $Werkzeug.prozessName -replace '\.exe$', ''
+
+    if ($Werkzeug.kommandozeilenMuster) {
+        $treffer = Get-CimInstance Win32_Process -Filter "Name='$($Werkzeug.prozessName)'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -match $Werkzeug.kommandozeilenMuster }
+        return [bool]$treffer
+    }
+
+    return [bool](Get-Process -Name $prozessBasisname -ErrorAction SilentlyContinue)
+}
+
 function Start-Watcher {
     param($Config, $Werkzeuge)
 
     $laufendVorher = @{}
     foreach ($werkzeug in $Werkzeuge) {
-        $prozessBasisname = $werkzeug.prozessName -replace '\.exe$', ''
-        $laufendVorher[$werkzeug.name] = [bool](Get-Process -Name $prozessBasisname -ErrorAction SilentlyContinue)
+        $laufendVorher[$werkzeug.name] = Test-WerkzeugLaeuft -Werkzeug $werkzeug
     }
 
     $script:letzteUpdatePruefung = [DateTime]::MinValue
@@ -1260,8 +1279,7 @@ function Start-Watcher {
             }
 
             foreach ($werkzeug in $Werkzeuge) {
-                $prozessBasisname = $werkzeug.prozessName -replace '\.exe$', ''
-                $laeuftJetzt = [bool](Get-Process -Name $prozessBasisname -ErrorAction SilentlyContinue)
+                $laeuftJetzt = Test-WerkzeugLaeuft -Werkzeug $werkzeug
 
                 if ($laufendVorher[$werkzeug.name] -eq $true -and $laeuftJetzt -eq $false) {
                     Show-VersionPopup -Config $Config -Werkzeuge $Werkzeuge
