@@ -230,13 +230,23 @@ ausgeschlossen.
       {
           "name": "TIA",
           "prozessName": "Siemens.Automation.Portal.exe",
-          "erweiterungsMuster": "^ap(\\d+)$"
+          "erweiterungsMuster": "^ap(\\d+(?:_\\d+)?)$"
       },
       {
           "name": "LOGO!Soft",
           "prozessName": "javaw.exe",
           "erweiterungsMuster": "^lsc$",
           "kommandozeilenMuster": "LOGOComfort"
+      },
+      {
+          "name": "SIMATIC Manager",
+          "prozessName": "S7tgtopx.exe",
+          "erweiterungsMuster": "^s7p$"
+      },
+      {
+          "name": "WinCC flexible",
+          "prozessName": "HmiES.exe",
+          "erweiterungsMuster": "^hmi$"
       }
   ]
   ```
