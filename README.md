@@ -9,9 +9,11 @@ Manager Stufe 1 (lokale Versionierung) plus Server-Sofortkopie: jede Version
 wird direkt beim Erstellen zusaetzlich auf den Serverpfad kopiert, wenn der
 gerade erreichbar ist - inklusive SHA256-Hash je Version, Namenskonflikt-
 Erkennung (`_KONFLIKT_<Zeitstempel>`) und Zeitlimit gegen haengende
-Netzwerkfreigaben (siehe "Funktionsweise"). Eine vollwertige Stufe 2
-(Hintergrund-Sync fuer bereits in `sync.json` wartende Versionen, HTML-
-Historie) ist konzeptionell vorbereitet, aber noch nicht implementiert.
+Netzwerkfreigaben (siehe "Funktionsweise"). Die Versionshistorie liegt als
+eigenstaendige, direkt per Doppelklick ansehbare HTML-Datei vor (siehe
+"Funktionsweise"). Eine vollwertige Stufe 2 (Hintergrund-Sync fuer bereits
+in `sync.json` wartende Versionen) ist konzeptionell vorbereitet, aber noch
+nicht implementiert.
 
 ## Installation
 
@@ -212,13 +214,18 @@ unbegrenzt.
   still bereinigt.
 - Jede erstellte Version (auch Zwischenversionen) landet zusaetzlich zum
   ZIP als Eintrag (Dateiname, Typ, Zeitstempel, Kommentar, SHA256-Hash) in
-  einer Versionshistorie `{Praefix}historie.json` - eine Datei je Projekt,
+  einer Versionshistorie `{Praefix}historie.html` - eine Datei je Projekt,
   ueber den Praefix von anderen Projekten getrennt, lokal im Zielpfad UND
   (bei erreichbarem Server) auf dem Serverpfad gespiegelt. Der Hash dient
   sowohl als Beleg als auch der Namenskonflikt-Erkennung beim Server-
   Kopieren. Der Kommentar wird auch in den `sync.json`-Eintrag
-  uebernommen. Vorstufe fuer die geplante HTML-Historie aus Stufe 2, die
-  diese Daten aufbereiten soll - aktuell nur Rohdaten.
+  uebernommen. Die Historie ist eine eigenstaendige HTML-Seite (Tabelle
+  per JavaScript aus einem eingebetteten `<script type="application/json">`-
+  Block gerendert) - direkt per Doppelklick im Browser ansehbar, ohne
+  Webserver oder sonstige Abhaengigkeit. Bewusst kein per `fetch()`
+  nachgeladenes externes JSON: Chrome/Edge blockieren das bei `file://`
+  per CORS, deshalb wird die komplette Datei bei jeder neuen Version
+  einmal neu geschrieben statt die Daten separat zu halten.
 
 ## Konfiguration
 
@@ -304,10 +311,10 @@ und unabhaengig vom konkreten Aufrufkontext:
   Format"`, sobald der dritte Parameter (Backup-Pfad) `$null` ist - selbst
   mit ansonsten komplett validen Pfaden. Betraf urspruenglich jede zweite
   und weitere Speicherung von `config.json`/`sync.json`/`werkzeuge.json`/
-  `historie.json` (die erste Speicherung nimmt den `Move-Item`-Zweig, weil
+  `historie.html` (die erste Speicherung nimmt den `Move-Item`-Zweig, weil
   die Datei noch nicht existiert, und faellt dadurch nicht auf). Fix: immer
   einen echten (danach geloeschten) Backup-Pfad uebergeben, nie `$null`
-  (siehe `Set-JsonAtomar`).
+  (siehe `Set-JsonAtomar`/`Set-TextAtomar`).
 - **`@(Get-Content ... | ConvertFrom-Json)`** als EIN zusammengesetzter
   Ausdruck verschachtelt ein Ergebnis mit 2+ Elementen faelschlich in ein
   1-Element-Array (`.Count` luegt dann), obwohl genau dieses `@()` eigent-
@@ -318,10 +325,20 @@ und unabhaengig vom konkreten Aufrufkontext:
   unbemerkt "unsichtbar". Fix: IMMER erst in eine Zwischenvariable parsen,
   danach in einem eigenen Schritt mit `@()` absichern - nie
   `@(Pipeline | ConvertFrom-Json)` als ein Ausdruck.
+- **`@() | ConvertTo-Json`** erzeugt bei einem LEEREN Array ueberhaupt
+  keinen Output (leerer String statt `"[]"`) - die Pipeline loest das
+  leere Array in null Objekte auf, `ConvertTo-Json` bekommt dadurch nie
+  etwas zu verarbeiten. Betraf `Get-HistorieHtml` beim allerersten
+  Speichern einer neuen Versionshistorie (noch keine Eintraege): das
+  eingebettete `<script type="application/json">` blieb leer statt `[]`,
+  wodurch `JSON.parse("")` in der generierten HTML-Datei fehlschlug. Fix:
+  `ConvertTo-Json -InputObject @($Eintraege)` statt
+  `@($Eintraege) | ConvertTo-Json` - `-InputObject` uebergibt das Array
+  als EIN Objekt statt es durch die Pipeline zu entpacken.
 
 ## Naechste Schritte
 
 - Manager Stufe 2: automatisches Nachholen der `sync.json`-Warteliste,
-  sobald der Server wieder erreichbar ist; HTML-Historie.
+  sobald der Server wieder erreichbar ist.
 - Auto-Erkennung, welche Dateien innerhalb einer TIA-Session konkret
   geaendert wurden (noch nicht spezifiziert).

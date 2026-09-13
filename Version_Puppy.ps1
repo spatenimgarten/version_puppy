@@ -77,9 +77,17 @@ function Set-JsonAtomar {
     # jeglichem Aufrufkontext). Ein echter Backup-Pfad funktioniert, wird
     # danach einfach wieder geloescht.
     param([string]$Pfad, $Objekt)
+    Set-TextAtomar -Pfad $Pfad -Inhalt ($Objekt | ConvertTo-Json -Depth 10)
+}
+
+function Set-TextAtomar {
+    # Rohtext-Variante von Set-JsonAtomar (gleiches Atomar-Schreiben, siehe
+    # Kommentar dort) - fuer die Versionshistorie, die als vollstaendige
+    # HTML-Datei statt als reines JSON geschrieben wird.
+    param([string]$Pfad, [string]$Inhalt)
     $tempPfad   = "$Pfad.tmp"
     $backupPfad = "$Pfad.bak"
-    $Objekt | ConvertTo-Json -Depth 10 | Set-Content -Path $tempPfad -Encoding UTF8
+    Set-Content -Path $tempPfad -Value $Inhalt -Encoding UTF8
     if (Test-Path $Pfad) {
         [System.IO.File]::Replace($tempPfad, $Pfad, $backupPfad)
         Remove-Item -Path $backupPfad -Force -ErrorAction SilentlyContinue
@@ -356,17 +364,106 @@ function Build-Versionsdateiname {
 # endregion
 
 # ============================================================
-# region Lokale Versionshistorie (Kommentar je Version, Vorstufe fuer die
-# geplante HTML-Historie aus Stufe 2)
+# region Lokale Versionshistorie (Kommentar je Version)
 #
 #   Eine Datei pro Projekt im Zielpfad, ueber den Praefix vom Zielpfad
 #   anderer Projekte getrennt (gleiches Prinzip wie die Versionsnummern).
+#   Liegt als eigenstaendige HTML-Datei vor (Tabelle + eingebettetes JSON
+#   in einem <script type="application/json">-Block) statt als reines
+#   .json - direkt per Doppelklick im Browser ansehbar, ohne Webserver.
+#   Der eingebettete JSON-Block bleibt die maschinenlesbare Quelle:
+#   ConvertFrom-HistorieHtml liest ihn zum Weiterverarbeiten (Anhaengen,
+#   Server-Sync) wieder heraus, Get-HistorieHtml baut die komplette Datei
+#   bei jeder Aenderung neu (kein Nachladen zur Laufzeit noetig, damit
+#   auch aus file:// ohne CORS-Einschraenkungen funktionsfaehig).
 # ============================================================
 
 function Get-VersionshistorieDatei {
     param($Projekt, $GlobalConfig)
     $praefix = Get-VersionsPraefix -Projekt $Projekt -GlobalConfig $GlobalConfig
-    Join-Path $Projekt.zielpfad "${praefix}historie.json"
+    Join-Path $Projekt.zielpfad "${praefix}historie.html"
+}
+
+function Get-HistorieHtml {
+    # Baut die komplette, in sich geschlossene HTML-Seite neu auf - Tabelle
+    # wird per JavaScript aus dem eingebetteten JSON-Block gerendert, damit
+    # die Darstellung (Sortierung, Formatierung) an einer Stelle bleibt und
+    # nicht bei jedem Eintrag erneut generiert werden muss.
+    param($Eintraege)
+    # -InputObject statt Pipeline: "@() | ConvertTo-Json" erzeugt bei einem
+    # leeren Array GAR KEINEN Output (Pipeline loest das Array in null
+    # Objekte auf, ConvertTo-Json bekommt dadurch nichts zu verarbeiten) -
+    # -InputObject uebergibt das Array als EIN Objekt und liefert dafuer
+    # korrekt "[]" statt einem leeren String.
+    $json = ConvertTo-Json -InputObject @($Eintraege) -Depth 10
+    @"
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Versionshistorie</title>
+<style>
+  body { font-family: "Segoe UI", Arial, sans-serif; margin: 2em; color: #222; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; font-size: 0.9em; vertical-align: top; }
+  th { background: #f0f0f0; }
+  tr:nth-child(even) { background: #fafafa; }
+  td.hash { font-family: Consolas, monospace; font-size: 0.8em; color: #666; word-break: break-all; }
+  td.typ-Konflikt { color: #b00020; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Versionshistorie</h1>
+<table id="tabelle">
+  <thead><tr><th>Datum</th><th>Datei</th><th>Typ</th><th>Kommentar</th><th>SHA256</th></tr></thead>
+  <tbody></tbody>
+</table>
+<p id="leer" style="display:none; color:#666;">Noch keine Versionen vorhanden.</p>
+<script type="application/json" id="historie-data">
+$json
+</script>
+<script>
+(function () {
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  var daten = JSON.parse(document.getElementById("historie-data").textContent || "[]");
+  var tbody = document.querySelector("#tabelle tbody");
+  if (daten.length === 0) { document.getElementById("leer").style.display = "block"; }
+  daten.slice().reverse().forEach(function (e) {
+    var tr = document.createElement("tr");
+    var datum = e.erstelltAm ? new Date(e.erstelltAm).toLocaleString("de-DE") : "";
+    tr.innerHTML = "<td>" + esc(datum) + "</td>" +
+      "<td>" + esc(e.dateiname) + "</td>" +
+      "<td class=\"typ-" + esc(e.typ) + "\">" + esc(e.typ) + "</td>" +
+      "<td>" + esc(e.kommentar) + "</td>" +
+      "<td class=\"hash\">" + esc(e.hash) + "</td>";
+    tbody.appendChild(tr);
+  });
+})();
+</script>
+</body>
+</html>
+"@
+}
+
+function ConvertFrom-HistorieHtml {
+    # Liest den eingebetteten <script type="application/json">-Block aus
+    # einer per Get-HistorieHtml erzeugten Datei wieder heraus - genutzt
+    # sowohl beim Anhaengen eines neuen Eintrags als auch beim Server-Sync
+    # (dort auch auf den ROHEN Inhalt einer bereits heruntergeladenen
+    # Server-Datei anwendbar, nicht nur per Pfad).
+    param([string]$Inhalt)
+    if ($Inhalt -notmatch '(?s)<script type="application/json" id="historie-data">(.*?)</script>') {
+        return @()
+    }
+    # Siehe Kommentar in Load-Werkzeuge - Zwischenvariable ist hier Pflicht,
+    # "@(... | ConvertFrom-Json)" als ein Ausdruck verschachtelt sonst ein
+    # Ergebnis mit 2+ Elementen faelschlich in ein 1-Element-Array.
+    $geparst = $Matches[1] | ConvertFrom-Json
+    return @($geparst)
 }
 
 function Add-VersionshistorieEintrag {
@@ -389,7 +486,7 @@ function Add-VersionshistorieEintrag {
         kommentar  = $Kommentar
         hash       = $Hash
     }
-    Set-JsonAtomar -Pfad $historieDatei -Objekt $eintraege
+    Set-TextAtomar -Pfad $historieDatei -Inhalt (Get-HistorieHtml -Eintraege $eintraege)
 }
 
 function Read-VersionshistorieDatei {
@@ -399,11 +496,8 @@ function Read-VersionshistorieDatei {
     param([string]$Pfad)
     if (-not (Test-Path $Pfad)) { return @() }
     try {
-        # Siehe Kommentar in Load-Werkzeuge - Zwischenvariable ist hier
-        # Pflicht, "@(... | ConvertFrom-Json)" als ein Ausdruck verschachtelt
-        # sonst ein Ergebnis mit 2+ Elementen faelschlich.
-        $geparst = Get-Content -Path $Pfad -Raw -Encoding UTF8 | ConvertFrom-Json
-        return @($geparst)
+        $inhalt = Get-Content -Path $Pfad -Raw -Encoding UTF8
+        return ConvertFrom-HistorieHtml -Inhalt $inhalt
     } catch {
         # Kaputte Historie nicht fortschreiben und damit staendig neue
         # Fehler produzieren - lieber mit leerer Liste neu beginnen als
@@ -564,16 +658,15 @@ function Sync-VersionshistorieZumServer {
     param($Projekt, $GlobalConfig, [string]$LokaleHistorieDatei, [int]$TimeoutSekunden)
 
     $praefix             = Get-VersionsPraefix -Projekt $Projekt -GlobalConfig $GlobalConfig
-    $serverHistorieDatei = Join-Path $Projekt.serverpfad "${praefix}historie.json"
+    $serverHistorieDatei = Join-Path $Projekt.serverpfad "${praefix}historie.html"
 
     $serverEintraege = @()
     try {
         $serverVorhanden = Invoke-MitNetzwerkTimeout -TimeoutSekunden $TimeoutSekunden -Aktion { Test-Path $using:serverHistorieDatei }
         if ($serverVorhanden) {
             $serverInhalt = Invoke-MitNetzwerkTimeout -TimeoutSekunden $TimeoutSekunden -Aktion { Get-Content -Path $using:serverHistorieDatei -Raw -Encoding UTF8 }
-            # Siehe Kommentar in Load-Werkzeuge - Zwischenvariable Pflicht.
-            $serverGeparst = $serverInhalt | ConvertFrom-Json
-            $serverEintraege = @($serverGeparst)
+            # @(...) noetig - siehe Kommentar in Add-VersionshistorieEintrag.
+            $serverEintraege = @(ConvertFrom-HistorieHtml -Inhalt $serverInhalt)
         }
     } catch {
         Write-Log "Server-Historie '$serverHistorieDatei' konnte nicht gelesen werden, vereinige nur mit leerer Server-Seite: $($_.Exception.Message)"
@@ -587,15 +680,15 @@ function Sync-VersionshistorieZumServer {
     foreach ($e in $lokaleEintraege) { $vereinigt[$e.dateiname] = $e }
     $ergebnis = @($vereinigt.Values | Sort-Object erstelltAm)
 
-    Set-JsonAtomar -Pfad $LokaleHistorieDatei -Objekt $ergebnis
+    $html = Get-HistorieHtml -Eintraege $ergebnis
+    Set-TextAtomar -Pfad $LokaleHistorieDatei -Inhalt $html
 
-    $json                = $ergebnis | ConvertTo-Json -Depth 10
-    $tempName             = "historie.tmp-$($GlobalConfig.kuerzel)-$(Get-Date -Format 'yyyyMMddHHmmss').json"
+    $tempName             = "historie.tmp-$($GlobalConfig.kuerzel)-$(Get-Date -Format 'yyyyMMddHHmmss').html"
     $serverTemp           = Join-Path $Projekt.serverpfad $tempName
     $serverHistorieBackup = "$serverHistorieDatei.bak"
 
     Invoke-MitNetzwerkTimeout -TimeoutSekunden $TimeoutSekunden -Aktion {
-        $using:json | Set-Content -Path $using:serverTemp -Encoding UTF8
+        $using:html | Set-Content -Path $using:serverTemp -Encoding UTF8
     } | Out-Null
     Invoke-MitNetzwerkTimeout -TimeoutSekunden $TimeoutSekunden -Aktion {
         if (Test-Path $using:serverHistorieDatei) {
