@@ -28,9 +28,13 @@ Datei auf die Zielmaschine zu kopieren:
    ```
    powershell.exe -ExecutionPolicy Bypass -File "C:\Tools\Version_Puppy\install.ps1"
    ```
-   Laedt `Version_Puppy.ps1` (inkl. `allowed_signers`) automatisch von
-   GitHub nach (main-Branch), richtet den Autostart ein und bietet an,
-   gleich zu starten.
+   Laedt das zuletzt signierte Release automatisch von GitHub nach -
+   signaturgeprueft gegen einen fest in `install.ps1` eingebauten
+   Vertrauensanker (Key "Laptop EF", siehe "Update"), kein main-Branch-
+   Download mehr. Fehlt `ssh-keygen.exe` (Windows-Feature "OpenSSH-
+   Client"), bricht die Installation mit klarer Fehlermeldung ab statt
+   ungeprueft weiterzumachen. Richtet danach den Autostart ein und bietet
+   an, gleich zu starten.
 3. Beim ersten Start von Version_Puppy werden `config.json` und
    `werkzeuge.json` automatisch mit Standardwerten angelegt. `kuerzel` in
    `config.json` danach von Hand nachtragen, in `werkzeuge.json` bei Bedarf
@@ -124,6 +128,16 @@ wird nie automatisiert eingebunden. Neues Release veroeffentlichen:
 Schritt 4 ist der einzige, der zwingend auf "Laptop EF" laufen muss - alles
 andere (inkl. dieser Implementierung) ist normaler Code, den jede Maschine
 mit Push-Zugriff beitragen kann.
+
+**Bei Key-Rotation:** Der oeffentliche Schluessel steckt an zwei Stellen -
+in `allowed_signers` im Repo UND fest eingebaut als `$AllowedSignersInhalt`
+in `install.ps1` (bewusst dupliziert, siehe Kommentar dort: der Installer
+darf seinen Vertrauensanker fuer die Erstinstallation nicht von GitHub
+nachladen, sonst koennte ein reiner Schreibzugriff aufs Repo ohne privaten
+Key genau diesen Anker faelschen). Wird der Key ersetzt, muss der neue
+oeffentliche Schluessel in **beiden** Dateien synchron aktualisiert werden -
+sonst schlaegt entweder die laufende Update-Pruefung oder jede
+Neuinstallation fehl.
 
 ## Logging
 
