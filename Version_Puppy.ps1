@@ -37,7 +37,7 @@ $AllowedSignersPfad = Join-Path $InstallVerzeichnis "allowed_signers"
 # Eigene Versionsnummer dieses Codestands - bei jedem signierten Release
 # erhoehen (Format X.Y.Z), sonst haelt Get-UpdateManifest ein frisch
 # verifiziertes Manifest faelschlich fuer "nicht neuer".
-$AktuelleVersion = [Version]"1.0.0"
+$AktuelleVersion = [Version]"1.0.1"
 
 # Signiertes Text-Manifest im Repo (siehe README "Release signieren") -
 # .sig ist dieselbe URL mit ".sig"-Suffix.
