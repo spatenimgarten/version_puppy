@@ -59,13 +59,20 @@ Benutzer), falls man `install.ps1` lieber nicht ausfuehren moechte:
 2. Darin eine neue Verknuepfung anlegen mit folgendem Ziel (Installationspfad
    anpassen):
    ```
-   powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Tools\Version_Puppy\Version_Puppy.ps1"
+   powershell.exe -WindowStyle Minimized -ExecutionPolicy Bypass -File "C:\Tools\Version_Puppy\Version_Puppy.ps1"
    ```
 
-`-WindowStyle Hidden` unterdrueckt nur das PowerShell-Konsolenfenster - die
-WinForms-Popups (Versionierung, neues Projekt registrieren) erscheinen
-weiterhin normal. `-ExecutionPolicy Bypass` gilt ausschliesslich fuer diesen
-einen Aufruf und aendert nichts an der systemweiten Execution Policy.
+`-WindowStyle Minimized` statt `Hidden`: Auf manchen Maschinen (beobachtet
+auf einer VM, vermutlich abhaengig von Session-/AV-Konfiguration) verhindert
+ein per `-WindowStyle Hidden` gestarteter Prozess, dass seine WinForms-
+Popups (Versionierung, neues Projekt registrieren) ueberhaupt angezeigt
+werden - der Prozess laeuft normal weiter, nur ohne jemals ein Fenster zu
+zeigen, was sich wie ein stiller Haenger tarnt. `Minimized` behaelt
+zuverlaessig eine Fenster-/Message-Pump-Anbindung (kurz sichtbares
+Taskleisten-Icon beim Start), zeigt danach aber ebenso kein staendig
+sichtbares Konsolenfenster. `-ExecutionPolicy Bypass` gilt ausschliesslich
+fuer diesen einen Aufruf und aendert nichts an der systemweiten Execution
+Policy.
 
 Robustere Alternative (z.B. wenn der Start auch bei Remote-/RDP-Anmeldung
 zuverlaessig klappen soll): Aufgabenplanung -> Aufgabe erstellen -> Trigger

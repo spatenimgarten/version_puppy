@@ -151,7 +151,7 @@ $Verknuepfung = Join-Path ([Environment]::GetFolderPath("Startup")) "Version_Pup
 $shell = New-Object -ComObject WScript.Shell
 $lnk = $shell.CreateShortcut($Verknuepfung)
 $lnk.TargetPath = "powershell.exe"
-$lnk.Arguments = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$SkriptPfad`""
+$lnk.Arguments = "-WindowStyle Minimized -ExecutionPolicy Bypass -File `"$SkriptPfad`""
 $lnk.WorkingDirectory = $InstallDir
 $lnk.Save()
 
@@ -170,7 +170,7 @@ if ($LaeuftBereits) {
 } else {
     $antwort = Read-Host "Jetzt sofort starten, statt bis zur naechsten Anmeldung zu warten? (j/n)"
     if ($antwort -eq "j") {
-        Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-ExecutionPolicy Bypass -File `"$SkriptPfad`""
+        Start-Process powershell.exe -WindowStyle Minimized -ArgumentList "-ExecutionPolicy Bypass -File `"$SkriptPfad`""
         Write-Host "Gestartet."
         Write-Log "Manuell gestartet ueber install.ps1."
     }

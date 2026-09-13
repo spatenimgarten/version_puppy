@@ -508,7 +508,7 @@ function Invoke-UpdateEinspielen {
         }
 
         Write-Log "Update $($Manifest.version) eingespielt, starte neu."
-        Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-ExecutionPolicy Bypass -File `"$SkriptPfad`""
+        Start-Process powershell.exe -WindowStyle Minimized -ArgumentList "-ExecutionPolicy Bypass -File `"$SkriptPfad`""
         exit 0
     } catch {
         Write-Log "Update $($Manifest.version) fehlgeschlagen: $($_.Exception.Message)"
