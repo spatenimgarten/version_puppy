@@ -24,16 +24,17 @@ Datei auf die Zielmaschine zu kopieren:
    ```
    powershell.exe -ExecutionPolicy Bypass -File "C:\Tools\Version_Puppy\install.ps1"
    ```
-   Laedt `Version_Puppy.ps1` und `update.ps1` automatisch von GitHub nach
-   (main-Branch), richtet Autostart und stuendlichen Update-Check ein
-   (siehe naechster Abschnitt) und bietet an, gleich zu starten.
+   Laedt `Version_Puppy.ps1` (inkl. `allowed_signers`) automatisch von
+   GitHub nach (main-Branch), richtet den Autostart ein und bietet an,
+   gleich zu starten.
 3. Beim ersten Start von Version_Puppy werden `config.json` und
    `werkzeuge.json` automatisch mit Standardwerten angelegt. `kuerzel` in
    `config.json` danach von Hand nachtragen, in `werkzeuge.json` bei Bedarf
    weitere Tool-Eintraege (siehe naechster Abschnitt).
 
-Danach sorgt der Update-Task dafuer, dass neue Versionen automatisch
-ankommen - kein erneutes manuelles Kopieren noetig.
+Danach prueft Version_Puppy selbst stuendlich auf ein neues, signiertes
+Release (siehe Abschnitt "Update") - kein separater Task, kein erneutes
+manuelles Kopieren noetig.
 
 ## Autostart mit Windows
 
@@ -67,32 +68,70 @@ im Hintergrund laufen lassen.
 
 ## Update
 
-`install.ps1` richtet neben dem Autostart auch einen stuendlichen Scheduled
-Task (`Version_Puppy_Update`) ein, der `update.ps1` ausfuehrt. Der laedt
-den aktuellen `main`-Branch als ZIP von GitHub (kein Git auf der
-Zielmaschine noetig), vergleicht die Dateien per Hash und ersetzt nur, was
-sich geaendert hat. `config.json` und `werkzeuge.json` sind nicht Teil des
-Repos und bleiben unberuehrt. Gab es eine Aenderung, wird der laufende Version_Puppy-Prozess
-beendet und mit dem neuen Stand neu gestartet - laufende Ueberwachung geht
-dabei kurz aus, ein evtl. offenes Versions-Popup wuerde mitbeendet.
+Kein separater Task mehr - der ohnehin laufende Watcher in
+`Version_Puppy.ps1` prueft alle 3 Sekunden mit, ob seit der letzten Stunde
+ein neues Release faellig ist (`Get-UpdateManifest`). Ablauf:
 
-Manuell anstossen: `powershell.exe -ExecutionPolicy Bypass -File
-"C:\Tools\Version_Puppy\update.ps1"`. Falls `Register-ScheduledTask` in
-`install.ps1` fehlschlaegt (z.B. durch Gruppenrichtlinien auf gesperrten
-Engineering-PCs), muss der Task manuell in der Aufgabenplanung angelegt
-werden (Trigger: taeglich wiederholen alle 1 Stunde, Aktion wie oben).
+1. `releases/latest/checksums.txt` + `.sig` werden von GitHub geladen
+   (roher Dateiinhalt, kein Git noetig).
+2. Die Signatur wird per `ssh-keygen -Y verify` gegen die mitgelieferte
+   `allowed_signers`-Datei geprueft. Nur bei gueltiger Signatur wird der
+   Inhalt ueberhaupt geparst - ohne `ssh-keygen.exe` (Windows-Bordmittel,
+   Teil des optionalen OpenSSH-Client-Features) oder ohne passende
+   `allowed_signers` wird der Check uebersprungen, nicht ungeprueft
+   akzeptiert.
+3. Ist die im Manifest genannte Version neuer als `$AktuelleVersion` im
+   laufenden Skript, erscheint im naechsten Versions-Popup ein Hinweis samt
+   Button "Jetzt aktualisieren".
+4. Erst der explizite Klick darauf laedt das im Manifest verlinkte ZIP,
+   prueft dessen SHA-256 gegen den im (bereits signaturgeprueften)
+   Manifest hinterlegten Wert, ersetzt die Programmdateien (`config.json`,
+   `werkzeuge.json`, `sync.json` bleiben unberuehrt) und startet
+   Version_Puppy neu.
+
+Damit ist das automatische Laufen auf reines Lesen+Verifizieren begrenzt -
+Code wird nur nach bewusstem Klick ausgetauscht, nie unbeaufsichtigt. Wer
+nur Schreibzugriff aufs Repo hat (aber nicht den privaten Signier-Key
+"Laptop EF" aus `allowed_signers`), kann kein gefaelschtes Manifest in
+Umlauf bringen - hoechstens ein aelteres, echtes wiederverwenden
+(Rollback), da keine monotone Versionshistorie erzwungen wird.
+
+### Release signieren (manueller Schritt, nur auf der Maschine mit dem privaten Key)
+
+Der private Signier-Key existiert nur auf einer Maschine ("Laptop EF") und
+wird nie automatisiert eingebunden. Neues Release veroeffentlichen:
+
+1. Version in `Version_Puppy.ps1` (`$AktuelleVersion`) erhoehen, commiten,
+   taggen (`git tag vX.Y.Z`), pushen (inkl. `--tags`).
+2. GitHubs automatisch generiertes Tag-Archiv abwarten/laden:
+   `https://github.com/spatenimgarten/version_puppy/archive/refs/tags/vX.Y.Z.zip`
+3. SHA-256 davon berechnen (`Get-FileHash -Algorithm SHA256`) und
+   `checksums.txt` bauen:
+   ```
+   version=X.Y.Z
+   sha256=<HASH>
+   zipurl=https://github.com/spatenimgarten/version_puppy/archive/refs/tags/vX.Y.Z.zip
+   ```
+4. Signieren: `ssh-keygen -Y sign -f <privater-key> -n file checksums.txt`
+   erzeugt `checksums.txt.sig`.
+5. Beide Dateien nach `releases/latest/checksums.txt(.sig)` kopieren,
+   committen und auf `main` pushen.
+
+Schritt 4 ist der einzige, der zwingend auf "Laptop EF" laufen muss - alles
+andere (inkl. dieser Implementierung) ist normaler Code, den jede Maschine
+mit Push-Zugriff beitragen kann.
 
 ## Logging
 
-`install.ps1`, `update.ps1` und `Version_Puppy.ps1` schreiben wichtige
-Ereignisse (Start, Fehler, erstellte Versionen, Updates) in eine gemeinsame
+`install.ps1` und `Version_Puppy.ps1` schreiben wichtige Ereignisse (Start,
+Fehler, erstellte Versionen, Update-Checks) in eine gemeinsame
 `version_puppy.log` im Installationsordner - nicht versioniert, rein lokal.
-Wichtig vor allem fuer `update.ps1`: der laeuft per Scheduled Task komplett
-unsichtbar im Hintergrund, ohne die Log-Datei waere ein fehlgeschlagener
-Update-Check (z.B. Download-Fehler) von aussen nicht erkennbar. Popups
-(Fehlermeldungen, Versionierung) bleiben zusaetzlich bestehen, wo sie
-Sinn ergeben - das Log ist der Kanal fuer alles, was auch unbeaufsichtigt
-nachvollziehbar sein soll.
+Wichtig vor allem fuer den automatischen Update-Check: der laeuft
+unsichtbar im Watcher mit, ohne die Log-Datei waere ein fehlgeschlagener
+oder verworfener Check (Download-Fehler, ungueltige Signatur) von aussen
+nicht erkennbar. Popups (Fehlermeldungen, Versionierung) bleiben
+zusaetzlich bestehen, wo sie Sinn ergeben - das Log ist der Kanal fuer
+alles, was auch unbeaufsichtigt nachvollziehbar sein soll.
 
 Einfache Ein-Generationen-Rotation: ueberschreitet `version_puppy.log` 2 MB,
 wird sie nach `version_puppy.log.old` verschoben und neu begonnen - damit
@@ -137,7 +176,8 @@ alle 3 Sekunden neu, `sync.json` wird direkt bei jedem Zugriff (neue
 Version, Popup-Anzeige) frisch gelesen bzw. geschrieben. Geschrieben wird
 immer atomar (Temp-Datei + `[System.IO.File]::Replace()`) - eine kaputte/
 abgeschnittene JSON-Datei durch einen Prozessabbruch mitten im Schreiben
-(z.B. update.ps1s `Stop-Process -Force`) ist damit ausgeschlossen.
+(z.B. der Selbst-Neustart nach einem eingespielten Update) ist damit
+ausgeschlossen.
 
 - **`config.json`** - maschinenspezifischer Laufzeitstand: Kuerzel,
   Trennzeichen, bekannte Projekte. Aendert sich staendig, bleibt pro

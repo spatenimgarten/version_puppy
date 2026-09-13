@@ -5,9 +5,10 @@
     Eigenstaendiger Installer - reicht als einzige Datei. Fehlt
     Version_Puppy.ps1 im selben Ordner, wird der aktuelle Stand zuerst von
     GitHub nachgeladen. Richtet danach den Autostart ein (Verknuepfung im
-    Startup-Ordner des aktuellen Benutzers, kein Admin noetig), einen
-    stuendlichen Update-Check (Scheduled Task, laedt update.ps1) und bietet
-    an, das Tool gleich zu starten.
+    Startup-Ordner des aktuellen Benutzers, kein Admin noetig) und bietet
+    an, das Tool gleich zu starten. Der Update-Check laeuft direkt im
+    Watcher von Version_Puppy.ps1 mit (stuendlich, signaturgeprueft) -
+    kein eigener Scheduled Task mehr noetig.
 #>
 
 if ($PSVersionTable.PSVersion -lt [Version]"5.1") {
@@ -20,7 +21,6 @@ if ($PSVersionTable.PSVersion -lt [Version]"5.1") {
 
 $InstallDir      = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SkriptPfad      = Join-Path $InstallDir "Version_Puppy.ps1"
-$UpdatePfad      = Join-Path $InstallDir "update.ps1"
 $WerkzeugePfad   = Join-Path $InstallDir "werkzeuge.json"
 $BeispielPfad    = Join-Path $InstallDir "werkzeuge.example.json"
 $LogPfad         = Join-Path $InstallDir "version_puppy.log"
@@ -85,22 +85,6 @@ $lnk.Save()
 Write-Host "Autostart eingerichtet: $Verknuepfung" -ForegroundColor Green
 Write-Host "Version_Puppy startet ab der naechsten Anmeldung automatisch im Hintergrund."
 Write-Log "Autostart-Verknuepfung eingerichtet: $Verknuepfung"
-
-if (Test-Path $UpdatePfad) {
-    try {
-        $AufgabenName = "Version_Puppy_Update"
-        $Aktion  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$UpdatePfad`""
-        $Trigger = New-ScheduledTaskTrigger -Once (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration ([TimeSpan]::MaxValue)
-        Register-ScheduledTask -TaskName $AufgabenName -Action $Aktion -Trigger $Trigger -Description "Prueft stuendlich auf ein Version_Puppy-Update von GitHub." -Force | Out-Null
-        Write-Host "Automatischer Update-Check eingerichtet (stuendlich, Task '$AufgabenName')." -ForegroundColor Green
-        Write-Log "Scheduled Task '$AufgabenName' eingerichtet (stuendlich)."
-    } catch {
-        Write-Host "Automatischer Update-Check konnte nicht eingerichtet werden ($($_.Exception.Message)) - update.ps1 muss manuell oder per eigener Aufgabenplanung ausgefuehrt werden." -ForegroundColor Yellow
-        Write-Log "Scheduled Task konnte nicht eingerichtet werden: $($_.Exception.Message)"
-    }
-} else {
-    Write-Host "update.ps1 nicht gefunden - kein automatischer Update-Check eingerichtet." -ForegroundColor Yellow
-}
 
 # Verhindert einen zweiten parallelen Watcher, falls install.ps1 auf einer
 # Maschine erneut ausgefuehrt wird, auf der Version_Puppy bereits laeuft

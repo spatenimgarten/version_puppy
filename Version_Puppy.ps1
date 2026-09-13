@@ -27,10 +27,24 @@ if ($PSVersionTable.PSVersion -lt $MinPSVersion) {
 }
 
 $InstallVerzeichnis = Split-Path -Parent $MyInvocation.MyCommand.Path
+$SkriptPfad = Join-Path $InstallVerzeichnis "Version_Puppy.ps1"
 $ConfigPfad = Join-Path $InstallVerzeichnis "config.json"
 $WerkzeugePfad = Join-Path $InstallVerzeichnis "werkzeuge.json"
 $SyncPfad = Join-Path $InstallVerzeichnis "sync.json"
 $LogPfad = Join-Path $InstallVerzeichnis "version_puppy.log"
+$AllowedSignersPfad = Join-Path $InstallVerzeichnis "allowed_signers"
+
+# Eigene Versionsnummer dieses Codestands - bei jedem signierten Release
+# erhoehen (Format X.Y.Z), sonst haelt Get-UpdateManifest ein frisch
+# verifiziertes Manifest faelschlich fuer "nicht neuer".
+$AktuelleVersion = [Version]"1.0.0"
+
+# Signiertes Text-Manifest im Repo (siehe README "Release signieren") -
+# .sig ist dieselbe URL mit ".sig"-Suffix.
+$UpdateManifestUrl    = "https://raw.githubusercontent.com/spatenimgarten/version_puppy/main/releases/latest/checksums.txt"
+$UpdateManifestSigUrl = "$UpdateManifestUrl.sig"
+$UpdatePrincipal      = "release"
+$UpdatePruefIntervall = [TimeSpan]::FromHours(1)
 
 function Write-Log {
     param([string]$Nachricht)
@@ -323,6 +337,116 @@ function Add-VersionshistorieEintrag {
         kommentar  = $Kommentar
     }
     Set-JsonAtomar -Pfad $historieDatei -Objekt $eintraege
+}
+
+# endregion
+
+# ============================================================
+# region Signiertes Update: Manifest pruefen, Update einspielen
+#
+#   Bewusst kein Git auf der Zielmaschine noetig - stattdessen wird ein
+#   winziges, signiertes Text-Manifest (releases/latest/checksums.txt +
+#   .sig, gepflegt im Repo) per SSH-Signatur gegen eine mitgelieferte
+#   allowed_signers-Datei geprueft, bevor irgendein Code heruntergeladen
+#   oder ausgefuehrt wird. Wer Schreibzugriff aufs Repo hat, aber nicht den
+#   privaten Signier-Key, kann das Manifest damit nicht faelschen - nur
+#   auf eine aeltere, echte Version zuruecksetzen (Rollback), da hier keine
+#   monotone Versionshistorie erzwungen wird. Fuer ein internes Tool
+#   bewusst in Kauf genommen statt eines vollen TUF-artigen Schemas.
+# ============================================================
+
+function Get-UpdateManifest {
+    # Laedt Manifest + Signatur, prueft die Signatur per "ssh-keygen -Y
+    # verify" gegen allowed_signers. Gibt bei JEDEM Fehler (Download,
+    # fehlendes ssh-keygen/allowed_signers, ungueltige Signatur,
+    # unvollstaendiges Manifest) $null zurueck - ein fehlgeschlagener
+    # Update-Check darf den Watcher nie stoeren oder ungeprueften Inhalt
+    # durchlassen.
+    $manifestPfad = Join-Path $env:TEMP "version_puppy_update_manifest.txt"
+    $sigPfad      = Join-Path $env:TEMP "version_puppy_update_manifest.sig"
+    try {
+        if (-not (Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue)) {
+            Write-Log "Update-Check uebersprungen: ssh-keygen.exe nicht gefunden."
+            return $null
+        }
+        if (-not (Test-Path $AllowedSignersPfad)) {
+            Write-Log "Update-Check uebersprungen: allowed_signers fehlt."
+            return $null
+        }
+
+        Invoke-WebRequest -Uri $UpdateManifestUrl -OutFile $manifestPfad -UseBasicParsing
+        Invoke-WebRequest -Uri $UpdateManifestSigUrl -OutFile $sigPfad -UseBasicParsing
+
+        # cmd.exe fuer die "<"-Stdin-Umleitung - PowerShell 5.1 reicht Text
+        # ueber die Pipeline zeilenweise mit eigener Zeilenumbruch-
+        # Behandlung durch, ssh-keygen -Y verify braucht aber exakt die
+        # signierten Rohbytes.
+        $pruefBefehl = "ssh-keygen.exe -Y verify -f `"$AllowedSignersPfad`" -I $UpdatePrincipal -n file -s `"$sigPfad`" < `"$manifestPfad`""
+        $ausgabe = & cmd.exe /c $pruefBefehl 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "Update-Manifest-Signatur ungueltig, verworfen: $ausgabe"
+            return $null
+        }
+
+        $werte = @{}
+        Get-Content -Path $manifestPfad -Encoding UTF8 | ForEach-Object {
+            if ($_ -match '^(\w+)=(.+)$') { $werte[$Matches[1]] = $Matches[2] }
+        }
+        if (-not $werte.version -or -not $werte.sha256 -or -not $werte.zipurl) {
+            Write-Log "Update-Manifest signiert, aber unvollstaendig - verworfen."
+            return $null
+        }
+        return [PSCustomObject]$werte
+    } catch {
+        Write-Log "Update-Check fehlgeschlagen: $($_.Exception.Message)"
+        return $null
+    } finally {
+        Remove-Item -Path $manifestPfad, $sigPfad -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Invoke-UpdateEinspielen {
+    # Laedt das ZIP aus dem (bereits signaturgeprueften) Manifest, prueft
+    # den Hash zusaetzlich gegen den im Manifest hinterlegten Wert (schuetzt
+    # gegen einen Download-/Mirror-Fehler, nicht gegen Faelschung - das
+    # erledigt die Signatur schon vorher), ersetzt die Programmdateien und
+    # startet neu.
+    param($Manifest)
+
+    $TempZip     = Join-Path $env:TEMP "version_puppy_update.zip"
+    $TempExtract = Join-Path $env:TEMP "version_puppy_update_extract"
+    try {
+        Invoke-WebRequest -Uri $Manifest.zipurl -OutFile $TempZip -UseBasicParsing
+
+        $istHash = (Get-FileHash -Path $TempZip -Algorithm SHA256).Hash
+        if ($istHash -ne $Manifest.sha256.ToUpperInvariant()) {
+            throw "Hash aus signiertem Manifest ($($Manifest.sha256)) passt nicht zum Download ($istHash)."
+        }
+
+        if (Test-Path $TempExtract) { Remove-Item $TempExtract -Recurse -Force }
+        Expand-Archive -Path $TempZip -DestinationPath $TempExtract -Force
+
+        $QuellOrdner = Get-ChildItem -Path $TempExtract -Directory | Select-Object -First 1
+        Get-ChildItem -Path $QuellOrdner.FullName -File | Where-Object {
+            $_.Name -notin @("config.json", "werkzeuge.json", "sync.json")
+        } | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination (Join-Path $InstallVerzeichnis $_.Name) -Force
+        }
+
+        Write-Log "Update $($Manifest.version) eingespielt, starte neu."
+        Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-ExecutionPolicy Bypass -File `"$SkriptPfad`""
+        exit 0
+    } catch {
+        Write-Log "Update $($Manifest.version) fehlgeschlagen: $($_.Exception.Message)"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Update konnte nicht eingespielt werden:`n$($_.Exception.Message)",
+            "Update fehlgeschlagen",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    } finally {
+        Remove-Item -Path $TempZip, $TempExtract -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # endregion
@@ -727,6 +851,28 @@ function Show-VersionPopup {
     $lblSync.ForeColor = [System.Drawing.Color]::Gray
     $form.Controls.Add($lblSync)
 
+    if ($script:verfuegbaresUpdate) {
+        $form.Height += 35
+
+        $lblUpdate = New-Object System.Windows.Forms.Label
+        $lblUpdate.Text = "Update $($script:verfuegbaresUpdate.version) verfuegbar (Signatur geprueft)"
+        $lblUpdate.Location = New-Object System.Drawing.Point(15, 228)
+        $lblUpdate.AutoSize = $true
+        $form.Controls.Add($lblUpdate)
+
+        $btnUpdate = New-Object System.Windows.Forms.Button
+        $btnUpdate.Text = "Jetzt aktualisieren"
+        $btnUpdate.Size = New-Object System.Drawing.Size(140, 25)
+        $btnUpdate.Location = New-Object System.Drawing.Point(260, 223)
+        # Schliesst das Popup und ersetzt danach sofort den laufenden Code -
+        # bewusst nur per explizitem Klick erreichbar, nie automatisch.
+        $btnUpdate.Add_Click({
+            $form.Close()
+            Invoke-UpdateEinspielen -Manifest $script:verfuegbaresUpdate
+        })
+        $form.Controls.Add($btnUpdate)
+    }
+
     [void]$form.ShowDialog()
 
     if ($combo.SelectedIndex -lt 0 -or $null -eq $script:popupAktion) { return }
@@ -762,10 +908,26 @@ function Start-Watcher {
         $laufendVorher[$werkzeug.name] = [bool](Get-Process -Name $prozessBasisname -ErrorAction SilentlyContinue)
     }
 
+    $script:letzteUpdatePruefung = [DateTime]::MinValue
+    $script:verfuegbaresUpdate   = $null
+
     while ($true) {
         Start-Sleep -Seconds 3
 
         try {
+            # Laeuft im selben 3s-Zyklus mit, prueft aber nur stuendlich -
+            # ersetzt den frueheren eigenen Scheduled Task fuer update.ps1.
+            # Reines Lesen+Verifizieren, kein Codeaustausch: der passiert
+            # erst auf expliziten Klick im Popup (Invoke-UpdateEinspielen).
+            if ((Get-Date) - $script:letzteUpdatePruefung -ge $UpdatePruefIntervall) {
+                $script:letzteUpdatePruefung = Get-Date
+                $manifest = Get-UpdateManifest
+                if ($manifest -and [Version]$manifest.version -gt $AktuelleVersion) {
+                    $script:verfuegbaresUpdate = $manifest
+                    Write-Log "Verifiziertes Update verfuegbar: $($manifest.version)"
+                }
+            }
+
             try {
                 $Config = Load-Config
             } catch {

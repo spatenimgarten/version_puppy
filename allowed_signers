@@ -1,0 +1,14 @@
+# Pinned Public Key(s) fuer die Verifikation von releases/latest/checksums.txt(.sig)
+# durch Version_Puppy.ps1 (Get-UpdateManifest, "ssh-keygen -Y verify").
+#
+# Format: <principal> <key-typ> <public-key>
+# Der principal muss zu $UpdatePrincipal in Version_Puppy.ps1 passen ("release").
+#
+# Aenderungen an dieser Datei sind selbst sicherheitskritisch: sie duerfen
+# nur als Teil eines Releases eingespielt werden, das mit einem bereits
+# hier gelisteten Key signiert ist - sonst koennte sich ein Angreifer mit
+# blossem Schreibzugriff aufs Repo (aber ohne privaten Key) selbst als
+# vertrauenswuerdig eintragen.
+#
+# "Laptop EF" - Release-Signing-Key (GitHub: Settings -> SSH and GPG keys)
+release ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDR1umaOFIBkIsTiunQF3wZGikE1zgGvtRUYT+4Lf3wf
