@@ -264,16 +264,17 @@ function Get-VersionsPraefix {
     "$($Projekt.projektnummer)$tz$($Projekt.werkzeug)$versionsTeil$tz"
 }
 
-function Get-NaechsteVersionsnummer {
-    param(
-        [string]$VersionenOrdner,
-        [string]$Praefix
-    )
-    if (-not (Test-Path $VersionenOrdner)) { return 1 }
+function Get-HoechsteVorhandeneVersionsnummer {
+    # Reine Ermittlung (kein +1) - wiederverwendbar sowohl fuers Zuweisen
+    # der naechsten Nummer (Get-NaechsteVersionsnummer) als auch spaeter
+    # fuer eine echte Stufe 2 (z.B. Abgleich/Konflikterkennung zwischen
+    # mehreren Quellen).
+    param([string]$Ordner, [string]$Praefix)
+    if (-not (Test-Path $Ordner)) { return 0 }
 
-    # Nur Dateien des eigenen Projekts zaehlen - der Zielordner kann sich
+    # Nur Dateien des eigenen Projekts zaehlen - der Ordner kann sich
     # mehrere Projekte teilen (Praefix aus Projektnummer+Werkzeug trennt sie).
-    $dateien = Get-ChildItem -Path $VersionenOrdner -Filter "*.zip" -File -ErrorAction SilentlyContinue |
+    $dateien = Get-ChildItem -Path $Ordner -Filter "*.zip" -File -ErrorAction SilentlyContinue |
         Where-Object { $_.BaseName.StartsWith($Praefix) }
     $nummern = @(
         foreach ($datei in $dateien) {
@@ -283,8 +284,30 @@ function Get-NaechsteVersionsnummer {
             }
         }
     )
-    if ($nummern.Count -eq 0) { return 1 }
-    return (($nummern | Measure-Object -Maximum).Maximum) + 1
+    if ($nummern.Count -eq 0) { return 0 }
+    return ($nummern | Measure-Object -Maximum).Maximum
+}
+
+function Get-NaechsteVersionsnummer {
+    # Nimmt das Maximum aus lokalem Zielpfad UND (falls gerade erreichbar)
+    # Serverpfad - sonst koennten zwei Maschinen, die dasselbe Projekt auf
+    # denselben Server sichern, unabhaengig voneinander dieselbe naechste
+    # Nummer vergeben und sich beim Server-Kopieren gegenseitig
+    # ueberschreiben (Copy-VersionZumServer kopiert mit -Force).
+    param(
+        [string]$VersionenOrdner,
+        [string]$Serverpfad,
+        [string]$Praefix
+    )
+
+    $hoechste = Get-HoechsteVorhandeneVersionsnummer -Ordner $VersionenOrdner -Praefix $Praefix
+
+    if (-not [string]::IsNullOrWhiteSpace($Serverpfad) -and (Test-Path $Serverpfad)) {
+        $hoechsteAufServer = Get-HoechsteVorhandeneVersionsnummer -Ordner $Serverpfad -Praefix $Praefix
+        if ($hoechsteAufServer -gt $hoechste) { $hoechste = $hoechsteAufServer }
+    }
+
+    $hoechste + 1
 }
 
 function Build-Versionsdateiname {
@@ -536,7 +559,7 @@ function New-ProjektVersion {
         }
 
         $praefix   = Get-VersionsPraefix -Projekt $Projekt -GlobalConfig $Config.global
-        $nummer    = Get-NaechsteVersionsnummer -VersionenOrdner $versionenOrdner -Praefix $praefix
+        $nummer    = Get-NaechsteVersionsnummer -VersionenOrdner $versionenOrdner -Serverpfad $Projekt.serverpfad -Praefix $praefix
         $dateiname = Build-Versionsdateiname -Projekt $Projekt -GlobalConfig $Config.global -Nummer $nummer -Typ $Typ
         $zielPfad  = Join-Path $versionenOrdner $dateiname
 

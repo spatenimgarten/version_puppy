@@ -154,6 +154,12 @@ unbegrenzt.
   Mehrere Projekte koennen sich denselben Zielpfad teilen - Dateiname
   (Projektnummer+Werkzeug-Praefix) und die laufende Versionsnummer je
   Projekt sind darauf ausgelegt, dass sich nichts vermischt.
+- Die naechste Versionsnummer wird als Maximum aus lokalem Zielpfad **und**
+  (falls gerade erreichbar) Serverpfad ermittelt (`Get-NaechsteVersions-
+  nummer`) - sichert mehrere Maschinen ab, die dasselbe Projekt an denselben
+  Server sichern: ohne diesen Abgleich koennten zwei Maschinen unabhaengig
+  voneinander dieselbe naechste Nummer vergeben und sich beim Server-
+  Kopieren gegenseitig ueberschreiben.
 - Neue Projekte werden ueber den "Neu..."-Button im Popup registriert
   (Ordnerauswahl, Kandidaten-Liste der erkannten Projektdateien, manuelle
   Bestaetigung - keine automatische Vorauswahl). Dabei werden zusaetzlich
