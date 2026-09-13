@@ -462,6 +462,52 @@ function Invoke-UpdateEinspielen {
 # endregion
 
 # ============================================================
+# region Server-Sofortkopie (Ersatz fuer die geplante Stufe-2-Warteschlange,
+# solange der Server im Moment des Speicherns erreichbar ist)
+# ============================================================
+
+function Copy-VersionZumServer {
+    # Best-Effort-Sofortkopie direkt beim Erstellen der Version - kein
+    # Hintergrundabgleich noetig, solange der Serverpfad gerade erreichbar
+    # ist. Schreibt zuerst unter einem eindeutigen Zwischennamen (Kuerzel +
+    # Zeitstempel, damit mehrere Maschinen sich nicht in die Quere kommen)
+    # und benennt danach auf den echten Dateinamen um, damit bei einem
+    # Abbruch mitten im Kopieren (Netzwerk weg, Server offline) nie eine
+    # halbfertige Datei unter dem echten Namen auf dem Server liegt.
+    param($Projekt, $GlobalConfig, [string]$QuellZip, [string]$Dateiname)
+
+    if ([string]::IsNullOrWhiteSpace($Projekt.serverpfad)) { return $false }
+
+    $tempName = "$Dateiname.tmp-$($GlobalConfig.kuerzel)-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    $zielTemp = Join-Path $Projekt.serverpfad $tempName
+    $ziel     = Join-Path $Projekt.serverpfad $Dateiname
+
+    try {
+        if (-not (Test-Path $Projekt.serverpfad)) {
+            Write-Log "Serverpfad '$($Projekt.serverpfad)' nicht erreichbar, '$Dateiname' bleibt in Sync-Warteliste."
+            return $false
+        }
+
+        # Vor dem Kopieren aufraeumen, falls von einem frueheren, mitten
+        # abgebrochenen Versuch mit demselben Zwischennamen noch etwas
+        # liegt - haelt das Serververzeichnis sauber statt Leichen
+        # anzusammeln.
+        Remove-Item -Path $zielTemp -Force -ErrorAction SilentlyContinue
+
+        Copy-Item -Path $QuellZip -Destination $zielTemp -Force
+        Move-Item -Path $zielTemp -Destination $ziel -Force
+        Write-Log "Version '$Dateiname' zusaetzlich auf Serverpfad kopiert."
+        return $true
+    } catch {
+        Write-Log "Kopieren von '$Dateiname' auf Serverpfad fehlgeschlagen, bleibt in Sync-Warteliste: $($_.Exception.Message)"
+        Remove-Item -Path $zielTemp -Force -ErrorAction SilentlyContinue
+        return $false
+    }
+}
+
+# endregion
+
+# ============================================================
 # region Version erstellen (ZIP, ohne Versionen-Unterordner selbst)
 # ============================================================
 
@@ -536,23 +582,34 @@ function New-ProjektVersion {
         Write-Log "Versionshistorie fuer '$dateiname' konnte nicht geschrieben werden: $($_.Exception.Message)"
     }
 
-    # In sync.json eintragen (Stufe 2 arbeitet diese eigenstaendige
-    # Warteschlange ab) - eigener try/catch wie bei der Historie, ein
-    # Sync-Eintrag ist kein Kriterium fuer den Erfolg der Version selbst.
+    # Sofortkopie auf den Server versuchen - nur wenn die (Server gerade
+    # nicht erreichbar/Kopierfehler) nicht klappt, landet die Version zum
+    # spaeteren Nachholen in der sync.json-Warteliste. Beides eigener
+    # try/catch wie bei der Historie: kein Kriterium fuer den Erfolg der
+    # Version selbst.
+    $aufServerKopiert = $false
     try {
-        $sync = Load-Sync
-        $sync += [PSCustomObject]@{
-            projektpfad = $Projekt.pfad
-            zielpfad    = $Projekt.zielpfad
-            serverpfad  = $Projekt.serverpfad
-            dateiname   = $dateiname
-            kommentar   = $Kommentar
-            erstelltAm  = (Get-Date).ToString("s")
-            status      = "wartend"
-        }
-        Save-Sync -Sync $sync
+        $aufServerKopiert = Copy-VersionZumServer -Projekt $Projekt -GlobalConfig $Config.global -QuellZip $zielPfad -Dateiname $dateiname
     } catch {
-        Write-Log "Sync-Eintrag fuer '$dateiname' konnte nicht gespeichert werden: $($_.Exception.Message)"
+        Write-Log "Server-Sofortkopie fuer '$dateiname' unerwartet fehlgeschlagen: $($_.Exception.Message)"
+    }
+
+    if (-not $aufServerKopiert) {
+        try {
+            $sync = Load-Sync
+            $sync += [PSCustomObject]@{
+                projektpfad = $Projekt.pfad
+                zielpfad    = $Projekt.zielpfad
+                serverpfad  = $Projekt.serverpfad
+                dateiname   = $dateiname
+                kommentar   = $Kommentar
+                erstelltAm  = (Get-Date).ToString("s")
+                status      = "wartend"
+            }
+            Save-Sync -Sync $sync
+        } catch {
+            Write-Log "Sync-Eintrag fuer '$dateiname' konnte nicht gespeichert werden: $($_.Exception.Message)"
+        }
     }
 
     return $dateiname

@@ -5,9 +5,13 @@ Automation) und perspektivisch weitere Engineering-Tools.
 
 ## Status
 
-Manager Stufe 1 (lokale Versionierung, kein Server-Sync). Stufe 2 (Server-Sync,
-Konflikterkennung) ist konzeptionell vorbereitet (Sync-Warteliste wird bereits
-lokal mitgefuehrt), aber noch nicht implementiert.
+Manager Stufe 1 (lokale Versionierung) plus einfache Server-Sofortkopie: jede
+Version wird direkt beim Erstellen zusaetzlich auf den Serverpfad kopiert,
+wenn der gerade erreichbar ist (siehe "Funktionsweise"). Eine vollwertige
+Stufe 2 (Hintergrund-Sync mit SHA256-Abgleich, Konflikterkennung,
+HTML-Historie) ist konzeptionell vorbereitet (Sync-Warteliste wird bereits
+lokal mitgefuehrt), aber noch nicht implementiert - die Warteliste faengt
+bis dahin nur die Faelle auf, in denen die Sofortkopie nicht geklappt hat.
 
 ## Installation
 
@@ -153,9 +157,17 @@ unbegrenzt.
 - Neue Projekte werden ueber den "Neu..."-Button im Popup registriert
   (Ordnerauswahl, Kandidaten-Liste der erkannten Projektdateien, manuelle
   Bestaetigung - keine automatische Vorauswahl). Dabei werden zusaetzlich
-  Zielpfad und Serverpfad erfasst (beides Pflichtfelder) - der Serverpfad
-  wird gespeichert und in die Sync-Warteliste uebernommen, aber in Stufe 1
-  noch nicht verwendet (Sync folgt erst in Stufe 2).
+  Zielpfad und Serverpfad erfasst (beides Pflichtfelder).
+- Nach dem lokalen ZIP wird sofort versucht, dieselbe Datei zusaetzlich auf
+  den Serverpfad zu kopieren (`Copy-VersionZumServer`): Ist der Serverpfad
+  gerade erreichbar, landet sie dort unter einem eindeutigen Zwischennamen
+  (Kuerzel + Zeitstempel) und wird danach auf den echten Dateinamen
+  umbenannt - so bleibt bei einem Abbruch mitten im Kopieren nie eine
+  halbfertige Datei unter dem echten Namen auf dem Server liegen. Klappt
+  die Sofortkopie nicht (Server nicht erreichbar, Kopierfehler), landet die
+  Version stattdessen in der `sync.json`-Warteliste zum spaeteren
+  Nachholen - kein SHA256-Abgleich, kein Konflikthandling, das bleibt der
+  vollen Stufe 2 vorbehalten.
 - Verwaiste Projekteintraege (Pfad existiert nicht mehr) werden beim Start
   still bereinigt.
 - Jede erstellte Version (auch Zwischenversionen) landet zusaetzlich zum
@@ -182,13 +194,14 @@ ausgeschlossen.
 - **`config.json`** - maschinenspezifischer Laufzeitstand: Kuerzel,
   Trennzeichen, bekannte Projekte. Aendert sich staendig, bleibt pro
   Maschine.
-- **`sync.json`** - Warteliste erstellter Versionen, die noch nicht auf
-  den jeweiligen Serverpfad synchronisiert wurden (Dateiname, Kommentar,
-  Zeitstempel, Status). Bewusst von `config.json` getrennt, damit Stufe 2
-  sie als eigenstaendige Abarbeitungs-Warteschlange lesen und leeren kann,
-  ohne mit dem Live-Projektstand zu kollidieren. Noch nicht funktional
-  genutzt (Sync folgt erst in Stufe 2), wird aber schon bei jeder Version
-  befuellt.
+- **`sync.json`** - Warteliste der Versionen, bei denen die Server-
+  Sofortkopie beim Erstellen nicht geklappt hat (Server nicht erreichbar,
+  Kopierfehler) - Dateiname, Kommentar, Zeitstempel, Status. Bewusst von
+  `config.json` getrennt, damit eine kuenftige Stufe 2 sie als eigen-
+  staendige Abarbeitungs-Warteschlange lesen und leeren kann, ohne mit dem
+  Live-Projektstand zu kollidieren. Wird nur bei fehlgeschlagener
+  Sofortkopie befuellt, aktuell von nichts automatisch wieder abgearbeitet
+  (das ist die eigentliche, noch fehlende Stufe 2).
 - **`werkzeuge.json`** - Tool-Definitionen (Name, Prozessname, Datei-
   Erweiterungsmuster). Aendert sich selten und laesst sich bei Bedarf
   einfach auf andere Maschinen kopieren, ohne Projektdaten mitzuschleppen:
