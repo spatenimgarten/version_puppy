@@ -304,12 +304,19 @@ function Get-HoechsteVorhandeneVersionsnummer {
 
     # Nur Dateien des eigenen Projekts zaehlen - der Ordner kann sich
     # mehrere Projekte teilen (Praefix aus Projektnummer+Werkzeug trennt sie).
+    #
+    # Nur echte "Version"-Dateien (Basename endet exakt nach V{NNN}, kein
+    # Kuerzel/Timestamp-Suffix einer Zwischenversion) zaehlen - sonst wuerde
+    # jede Zwischenversion die Nummer der naechsten echten Version mit
+    # hochzaehlen. Mehrere Zwischenversionen hintereinander bekommen dadurch
+    # dieselbe (noch nicht verbrauchte) Nummer, bis eine echte Version sie
+    # einloest.
     $dateien = Get-ChildItem -Path $Ordner -Filter "*.zip" -File -ErrorAction SilentlyContinue |
         Where-Object { $_.BaseName.StartsWith($Praefix) }
     $nummern = @(
         foreach ($datei in $dateien) {
             $rest = $datei.BaseName.Substring($Praefix.Length)
-            if ($rest -match '^V(\d+)') {
+            if ($rest -match '^V(\d+)$') {
                 [int]$Matches[1]
             }
         }
